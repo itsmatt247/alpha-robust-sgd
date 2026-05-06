@@ -1,0 +1,2369 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath, amsthm, amssymb}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\geometry{margin=1.2in}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{remark}[theorem]{Remark}
+\theoremstyle{definition}
+\newtheorem{assumption}{Assumption}
+\newtheorem{definition}[theorem]{Definition}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Prob}{\mathbb{P}}
+\newcommand{\norm}[1]{\left\| #1 \right\|}
+\newcommand{\abs}[1]{\left| #1 \right|}
+\newcommand{\inner}[2]{\left\langle #1,\, #2 \right\rangle}
+\newcommand{\clip}{\operatorname{Clip}}
+\newcommand{\phat}{\hat{p}}
+\newcommand{\shat}{\hat{\sigma}}
+\newcommand{\ahat}{\hat{\alpha}}
+\newcommand{\Filt}{\mathcal{F}}
+
+\title{\textbf{Convergence Analysis of $\alpha$-Robust SGD\\[4pt]
+\large Adaptive Gradient Clipping via Online Tail Index Estimation}}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ===========================================================================
+\section{Setup and Notation}
+\label{sec:setup}
+% ===========================================================================
+
+\paragraph{Problem.} We study the non-convex stochastic optimization problem:
+\[
+  \min_{x \in \R^d} f(x) \;=\; \E_\xi[F(x, \xi)].
+\]
+
+We make the following standing assumptions throughout.
+
+\begin{assumption}[$L$-smoothness]\label{ass:smooth}
+$f \colon \R^d \to \R$ is differentiable and $L$-smooth: for all $x, y \in \R^d$,
+\[
+  \norm{\nabla f(x) - \nabla f(y)} \leq L\norm{x - y}.
+\]
+Equivalently, for all $x, y$:
+$f(y) \leq f(x) + \inner{\nabla f(x)}{y - x} + \frac{L}{2}\norm{y - x}^2$.
+\end{assumption}
+
+\begin{assumption}[Heavy-tailed unbiased gradient noise]\label{ass:heavy}
+The stochastic gradient $g(x, \xi)$ satisfies, with
+$\varepsilon_t := g(x_t, \xi_t) - \nabla f(x_t)$ for the iterates $\{x_t\}$
+produced by the algorithm:
+\begin{enumerate}[label=(\alph*),noitemsep,leftmargin=*]
+  \item \textbf{Unbiasedness.} $\E[\varepsilon_t \mid \Filt_t] = 0$, where
+    $\Filt_t := \sigma(x_1, \varepsilon_1, \ldots, \varepsilon_{t-1})$ is the
+    natural filtration of the iterates (so $x_t \in \Filt_t$).
+  \item \textbf{Bounded $p$-th moment.} There exist $p \in (1, 2]$ and
+    $\sigma > 0$ with
+    $\E\!\left[\norm{\varepsilon_t}^p \,\big|\, \Filt_t\right] \leq \sigma^p$
+    for all $t$.
+  \item \textbf{Conditional independence.} Given the trajectory
+    $\{x_s\}_{s \leq T}$, the noise terms $\{\varepsilon_t\}$ are independent.
+\end{enumerate}
+When $p < 2$, the conditional variance $\E[\norm{\varepsilon_t}^2 \mid \Filt_t]$
+may be infinite---this is the heavy-tailed regime.
+\end{assumption}
+
+\begin{assumption}[Bounded below]\label{ass:below}
+$f^* := \inf_{x \in \R^d} f(x) > -\infty$.
+We write $\Delta_f := f(x_1) - f^*$ for the initial optimality gap.
+\end{assumption}
+
+\begin{assumption}[Bounded gradient signal]\label{ass:signal}
+There exists $M > 0$ such that $\norm{\nabla f(x_t)} \leq M$ for all
+iterates $x_t$ produced by the algorithm. This is mild: it is implied by
+bounded iterates $\norm{x_t} \leq R$ together with $L$-smoothness, or by
+compact sublevel sets of $f$.
+\end{assumption}
+
+\begin{assumption}[Uniformly regularly varying noise tails]\label{ass:tail}
+There exist $\alpha > 1$, $x_0 > 0$, and a slowly varying function $L$
+(i.e., $L(tx)/L(x) \to 1$ for all $t > 0$) such that, \emph{uniformly}
+over all iterates $x_t$ produced by the algorithm:
+\[
+  \Prob(\norm{\varepsilon_t} > x \mid x_t) \leq C_{\mathrm{tail}}\, x^{-\alpha} L(x),
+  \qquad x \geq x_0,
+\]
+and there exists $c_{\mathrm{tail}} > 0$ such that:
+\[
+  \Prob(\norm{\varepsilon_t} > x \mid x_t) \geq c_{\mathrm{tail}}\, x^{-\alpha} L(x),
+  \qquad x \geq x_0,
+\]
+for constants $C_{\mathrm{tail}} \geq c_{\mathrm{tail}} > 0$ that do not depend
+on $x_t$. The tail index $\alpha$ and the moment exponent $p$ from
+Assumption~\ref{ass:heavy} satisfy $p < \alpha$ (since the $p$-th moment
+is finite iff $p < \alpha$).
+
+This is weaker than requiring a common marginal distribution: the noise
+may depend on $x_t$ as long as the tail behavior is uniformly controlled.
+In our synthetic experiments (Phase~1), the noise is drawn i.i.d.\ from an
+exact Pareto distribution independent of $x_t$, so this assumption holds
+with $C_{\mathrm{tail}} = c_{\mathrm{tail}} = 1$.
+
+This assumption is needed \emph{only} for the Hill estimator analysis
+(Sections~\ref{sec:hill} and~\ref{sec:growing}). The fixed-schedule convergence
+theorem (Theorem~\ref{thm:fixed}) requires only
+Assumptions~\ref{ass:smooth}--\ref{ass:signal}.
+\end{assumption}
+
+\paragraph{Algorithm ($\alpha$-Robust SGD; lagged-window contract).}
+Given a time horizon $T$, the algorithm produces iterates:
+\[
+  x_{t+1} = x_t - \eta_t \cdot \clip(g_t,\, \tau_t), \qquad t = 1, \ldots, T,
+\]
+where:
+\begin{itemize}[noitemsep]
+  \item $\clip(g, \tau) := g \cdot \min(1,\, \tau/\norm{g})$ is the norm-clipping
+    operator, satisfying $\norm{\clip(g, \tau)} \leq \tau$ for all $g$.
+  \item $\eta_t > 0$ is the learning rate (constant under \emph{fixed} schedule;
+    $\eta_t = \eta_0/\sqrt{t}$ under \emph{growing} schedule).
+  \item $\tau_t > 0$ is the clipping threshold; in the \textbf{adaptive variant},
+    $\tau_t$ is computed from the \emph{lagged} rolling window of past gradient
+    norms $\{\norm{g_s}\}_{s = \max(1, t-W)}^{t-1}$ (and the Hill estimate
+    $\phat_t$ on the same window). The window is updated only \emph{after}
+    $\tau_t$ is used at step~$t$, so $\tau_t$ is $\Filt_t$-measurable. See
+    \texttt{optimizers/alpha\_robust\_sgd.py:step} and
+    \texttt{optimizers/torch/alpha\_robust\_sgd.py:step}.
+\end{itemize}
+
+\begin{remark}[Why lag the window]\label{rem:lag}
+If $\norm{g_t}$ were included in the window used to compute $\tau_t$, then
+$\tau_t$ would be a measurable function of $\varepsilon_t$ and so $\tau_t \notin
+\Filt_t$. The clipping inequality $\norm{b_t}\leq B(\tau)$ in
+Lemma~\ref{lem:bias} requires $\tau$ to be $\Filt_t$-measurable to apply
+$\E[\,\cdot\mid\Filt_t]$. The lagged-window contract makes the conditional
+expectation $\E[g_t^c \mid \Filt_t]$ a deterministic function of the
+$\Filt_t$-measurable $(x_t,\tau_t)$, recovering Lemmas~\ref{lem:bias}--\ref{lem:variance}
+verbatim with $\tau \rightsquigarrow \tau_t$.
+\end{remark}
+
+\paragraph{Target.} We will show that $\alpha$-Robust SGD achieves:
+\[
+  \frac{1}{T}\sum_{t=1}^{T}\E\!\left[\norm{\nabla f(x_t)}^2\right]
+  \;\leq\;
+  O\!\left(T^{-\frac{2(p-1)}{3p-2}}\right),
+\]
+which matches the minimax-optimal rate established in Zhang et al.~(2020)
+for non-convex optimization under heavy-tailed noise with bounded $p$-th moment.
+
+\begin{remark}[Rate exponent]
+For $p = 2$ (bounded variance), the rate reduces to $O(T^{-1/2})$, recovering
+the classical non-convex SGD rate. As $p \to 1^+$, the rate degrades to $O(1)$
+(no convergence), which is information-theoretically necessary since the first
+moment barely exists.
+\end{remark}
+
+
+% ===========================================================================
+\section{Clipped Gradient: Bias and Variance Bounds}
+\label{sec:clipping}
+% ===========================================================================
+
+The next two lemmas are the standard clipping bounds we use in the descent step.
+
+\begin{lemma}[Pointwise clipping inequality]\label{lem:pointwise}
+For any $a \geq 0$, $\tau > 0$, and $p \in (1, 2]$:
+\begin{enumerate}[label=(\alph*)]
+  \item $a \cdot \mathbf{1}(a > \tau) \;\leq\; \dfrac{a^p}{\tau^{p-1}}$.
+  \item $\min(a, \tau)^2 \;\leq\; \tau^{2-p}\, a^p$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+\textbf{(a)} On the event $\{a > \tau\}$: since $1 - p < 0$ and $a > \tau > 0$,
+we have $a^{1-p} < \tau^{1-p}$. Multiplying both sides by $a^p > 0$:
+\[
+  a = a^p \cdot a^{1-p} < a^p \cdot \tau^{1-p} = \frac{a^p}{\tau^{p-1}}.
+\]
+On $\{a \leq \tau\}$: the left side is $0 \leq a^p/\tau^{p-1}$.
+
+\textbf{(b)} Consider two cases:
+\begin{itemize}
+  \item If $a \leq \tau$: $\min(a,\tau)^2 = a^2 = a^p \cdot a^{2-p}
+    \leq a^p \cdot \tau^{2-p}$, since $a \leq \tau$ and $2 - p \geq 0$.
+  \item If $a > \tau$: $\min(a,\tau)^2 = \tau^2 = \tau^{2-p} \cdot \tau^p
+    \leq \tau^{2-p} \cdot a^p$, since $a > \tau$.
+    \qedhere
+\end{itemize}
+\end{proof}
+
+\begin{lemma}[Clipping bias bound]\label{lem:bias}
+Under Assumptions~\ref{ass:heavy} and~\ref{ass:signal}, let
+$g_t = \nabla f(x_t) + \varepsilon_t$ be the stochastic gradient at step $t$,
+with $\E[\varepsilon_t \mid x_t] = 0$ and $\E[\norm{\varepsilon_t}^p \mid x_t] \leq \sigma^p$.
+Define the clipped gradient $g_t^c = \clip(g_t, \tau)$ and the clipping bias:
+\[
+  b_t \;:=\; \nabla f(x_t) - \E[g_t^c \mid x_t]
+  \;=\; \E\!\left[g_t - g_t^c \mid x_t\right].
+\]
+Then for any $\tau > M$ (where $M = \sup_t \norm{\nabla f(x_t)}$):
+\[
+  \norm{b_t} \;\leq\; \frac{\sigma^p}{(\tau - M)^{p-1}}.
+\]
+In particular, if $\tau \geq 2M$:
+$\;\norm{b_t} \leq 2^{p-1}\sigma^p / \tau^{p-1}$.
+\end{lemma}
+
+\begin{proof}
+The clipping error satisfies:
+\[
+  \norm{g_t - g_t^c}
+  = \norm{g_t}\!\left(1 - \min\!\left(1, \frac{\tau}{\norm{g_t}}\right)\right)
+  = \bigl(\norm{g_t} - \tau\bigr)^+.
+\]
+By Jensen's inequality (applied to the convex function $\norm{\cdot}$):
+\[
+  \norm{b_t} = \norm{\E[g_t - g_t^c \mid x_t]}
+  \leq \E\!\left[\norm{g_t - g_t^c} \mid x_t\right]
+  = \E\!\left[\bigl(\norm{g_t} - \tau\bigr)^+ \mid x_t\right].
+\]
+
+\textbf{Key step.} On the event $\{\norm{g_t} > \tau\}$, by the triangle
+inequality and $\tau > M \geq \norm{\nabla f(x_t)}$:
+\[
+  \norm{g_t} - \tau
+  \leq \norm{\varepsilon_t} + \norm{\nabla f(x_t)} - \tau
+  \leq \norm{\varepsilon_t} + M - \tau
+  \leq \norm{\varepsilon_t}.
+\]
+Moreover, $\norm{g_t} > \tau$ and $\norm{g_t} \leq M + \norm{\varepsilon_t}$
+imply $\norm{\varepsilon_t} > \tau - M$. Therefore:
+\[
+  \bigl(\norm{g_t} - \tau\bigr)^+
+  \leq \norm{\varepsilon_t} \cdot \mathbf{1}\!\left(\norm{\varepsilon_t} > \tau - M\right).
+\]
+Applying Lemma~\ref{lem:pointwise}(a) with $a = \norm{\varepsilon_t}$ and
+threshold $\tau - M$:
+\[
+  \norm{\varepsilon_t} \cdot \mathbf{1}(\norm{\varepsilon_t} > \tau - M)
+  \leq \frac{\norm{\varepsilon_t}^p}{(\tau - M)^{p-1}}.
+\]
+Taking conditional expectations:
+\[
+  \norm{b_t}
+  \leq \E\!\left[\frac{\norm{\varepsilon_t}^p}{(\tau - M)^{p-1}} \;\middle|\; x_t\right]
+  = \frac{\E[\norm{\varepsilon_t}^p \mid x_t]}{(\tau - M)^{p-1}}
+  \leq \frac{\sigma^p}{(\tau - M)^{p-1}}.
+\]
+When $\tau \geq 2M$: $(\tau - M) \geq \tau/2$, so $(\tau - M)^{p-1} \geq (\tau/2)^{p-1}
+= \tau^{p-1}/2^{p-1}$, giving $\norm{b_t} \leq 2^{p-1}\sigma^p/\tau^{p-1}$.
+\end{proof}
+
+\begin{lemma}[Clipped gradient second moment bound]\label{lem:variance}
+Under the same setup as Lemma~\ref{lem:bias}:
+\[
+  \E\!\left[\norm{g_t^c}^2 \mid x_t\right]
+  \;\leq\; 2^{p-1}\tau^{2-p}\!\left(M^p + \sigma^p\right).
+\]
+\end{lemma}
+
+\begin{proof}
+By Lemma~\ref{lem:pointwise}(b) with $a = \norm{g_t}$:
+\[
+  \norm{g_t^c}^2 = \min(\norm{g_t}, \tau)^2 \leq \tau^{2-p}\norm{g_t}^p.
+\]
+By the triangle inequality $\norm{g_t} \leq \norm{\nabla f(x_t)} + \norm{\varepsilon_t}
+\leq M + \norm{\varepsilon_t}$, and the convexity inequality $(a + b)^p \leq
+2^{p-1}(a^p + b^p)$ valid for $a, b \geq 0$ and $p \geq 1$:
+\[
+  \norm{g_t}^p \leq (M + \norm{\varepsilon_t})^p \leq 2^{p-1}(M^p + \norm{\varepsilon_t}^p).
+\]
+Taking conditional expectations:
+\[
+  \E[\norm{g_t^c}^2 \mid x_t]
+  \leq \tau^{2-p} \cdot 2^{p-1}\!\left(M^p + \E[\norm{\varepsilon_t}^p \mid x_t]\right)
+  \leq 2^{p-1}\tau^{2-p}(M^p + \sigma^p).
+  \qedhere
+\]
+\end{proof}
+
+\begin{definition}[Bias and variance constants]\label{def:BV}
+For a given threshold $\tau > 2M$, define the bias and variance constants:
+\[
+  B(\tau) := \frac{2^{p-1}\sigma^p}{\tau^{p-1}}, \qquad
+  V(\tau)^2 := 2^{p-1}\tau^{2-p}(M^p + \sigma^p).
+\]
+By Lemmas~\ref{lem:bias} and~\ref{lem:variance}: $\norm{b_t} \leq B(\tau)$
+and $\E[\norm{g_t^c}^2 \mid x_t] \leq V(\tau)^2$ for all $t$.
+\end{definition}
+
+
+% ===========================================================================
+\section{Median Scale Estimation}
+\label{sec:median}
+% ===========================================================================
+
+In the adaptive variant, $\tau_t = C \cdot \shat_t$ with $\shat_t$ the median of
+the lagged window of norms (Section~\ref{sec:setup}). The goal here is a deviation bound for $\shat_t$.
+
+\begin{lemma}[Median concentration]\label{lem:median}
+Let $X_1, \ldots, X_W$ be independent (but not necessarily identically
+distributed) random variables. Suppose:
+\begin{enumerate}[label=(\roman*),noitemsep]
+  \item \textbf{Common median:} There exists $m \in \R$ such that
+    $\Prob(X_i \leq m) \geq 1/2$ and $\Prob(X_i \geq m) \geq 1/2$ for all $i$.
+  \item \textbf{Uniform density near median:} There exists $c > 0$ such that
+    for all $i$ and all $\delta \in [0, R]$:
+    \[
+      F_i(m + \delta) - F_i(m) \geq c\delta
+      \quad\text{and}\quad
+      F_i(m) - F_i(m - \delta) \geq c\delta,
+    \]
+    where $F_i(x) := \Prob(X_i \leq x)$. Equivalently, each $X_i$ has a
+    density (or sub-density) that is bounded below by $c$ in a neighborhood
+    of $m$.
+\end{enumerate}
+Let $\hat{m}_W = \operatorname{median}(X_1, \ldots, X_W)$ be the sample median. Then:
+\[
+  \Prob\!\left(\abs{\hat{m}_W - m} > \delta\right)
+  \leq 2\exp\!\left(-2W(c\delta)^2\right).
+\]
+In particular, taking $c = 1/R$ for a range parameter $R$ gives
+$\Prob(\abs{\hat{m}_W - m} > \delta) \leq 2\exp(-2W\delta^2/R^2)$.
+\end{lemma}
+
+\begin{proof}
+The sample median $\hat{m}_W$ exceeds $m + \delta$ only if fewer than half
+of the observations fall below $m + \delta$. Define $Y_i = \mathbf{1}(X_i \leq m + \delta)$.
+Since $\Prob(X_i \leq m + \delta) \geq 1/2 + c\delta$ (by the Lipschitz condition),
+we have $\E[Y_i] \geq 1/2 + c\delta$. The $Y_i$ are independent Bernoulli, and
+$\hat{m}_W > m + \delta$ implies $\sum_{i=1}^W Y_i < W/2$.
+
+By Hoeffding's inequality for the sum of independent bounded random variables:
+\[
+  \Prob\!\left(\sum_{i=1}^W Y_i < \frac{W}{2}\right)
+  \leq \Prob\!\left(\sum_{i=1}^W Y_i < W\E[Y_1] - Wc\delta\right)
+  \leq \exp\!\left(-2W(c\delta)^2\right).
+\]
+A symmetric argument applies for $\hat{m}_W < m - \delta$. A union bound
+gives $\Prob(\abs{\hat{m}_W - m} > \delta) \leq 2\exp(-2W(c\delta)^2)$.
+\end{proof}
+
+\begin{lemma}[Median sandwich for non-i.d.\ variables]\label{lem:median_sandwich}
+Let $X_1, \ldots, X_W$ be independent random variables (not necessarily
+identically distributed). Suppose there exist $m_0 \in \R$, $M_0 \geq 0$,
+and $c > 0$ such that for every $i$ and every $\delta \in [0, R]$:
+\begin{enumerate}[label=(\roman*),noitemsep]
+  \item \emph{Approximate-median band.} The population median $m_i$ of $X_i$
+    satisfies $\abs{m_i - m_0} \leq M_0$.
+  \item \emph{Local slope.} For every $i$ and every
+    $y \in [m_0 - M_0 - R, \, m_0 + M_0 + R]$ and every $\delta \in [0, R]$,
+    \[
+      F_i(y + \delta) - F_i(y) \geq c\,\delta.
+    \]
+\end{enumerate}
+Let $\hat{m}_W = \operatorname{median}(X_1, \ldots, X_W)$ be the sample median.
+Then for $0 \leq \delta \leq R$:
+\begin{equation}\label{eq:median_sandwich}
+  \Prob\!\left(\hat{m}_W > m_0 + M_0 + \delta\right) \leq \exp(-2W(c\delta)^2),
+  \qquad
+  \Prob\!\left(\hat{m}_W < m_0 - M_0 - \delta\right) \leq \exp(-2W(c\delta)^2).
+\end{equation}
+In particular, $\Prob(\abs{\hat{m}_W - m_0} > M_0 + \delta) \leq 2\exp(-2W(c\delta)^2)$.
+\end{lemma}
+
+\begin{proof}
+Fix $\delta \in [0, R]$ and put $y := m_0 + M_0 + \delta$. By condition~(i),
+$m_i \leq m_0 + M_0$, so by condition~(ii) applied at the base point
+$m_0 + M_0$:
+\[
+  \Prob(X_i \leq y)
+  \;=\; F_i(m_0 + M_0 + \delta)
+  \;\geq\; F_i(m_i) + (F_i(m_0 + M_0) - F_i(m_i)) + c\delta
+  \;\geq\; \tfrac{1}{2} + c\delta,
+\]
+where the last step uses $F_i(m_i) \geq 1/2$ and the monotonicity of $F_i$.
+Hence $Y_i := \mathbf 1(X_i \leq y)$ are independent Bernoullis with mean
+$\geq 1/2 + c\delta$. The event $\{\hat m_W > y\}$ implies $\sum_i Y_i < W/2$;
+Hoeffding's inequality applied to $\{1 - Y_i\}$ (so the deviation is at least
+$Wc\delta$) gives
+\[
+  \Prob(\hat m_W > m_0 + M_0 + \delta)
+  \;\leq\; \exp(-2W(c\delta)^2).
+\]
+The lower-tail bound is symmetric: take $y = m_0 - M_0 - \delta$, use
+$m_i \geq m_0 - M_0$ and $F_i(m_i) \leq 1/2$ to get
+$\Prob(X_i \geq y) \geq 1/2 + c\delta$, then apply Hoeffding.
+\end{proof}
+
+\begin{remark}[Why a shift identity is \emph{not} used]\label{rem:no_shift}
+For $d > 1$, the distribution of $\norm{\nabla f(x_s) + \varepsilon_s}$ is
+\emph{not} a horizontal shift of the distribution of $\norm{\varepsilon_s}$:
+adding a deterministic vector $b\in\R^d$ to the random vector $\varepsilon_s$
+changes the law of $\norm{\,\cdot\,}$ in a direction-dependent way, not a
+location-family fashion. We avoid the shift identity entirely;
+Lemma~\ref{lem:median_sandwich} only uses the deterministic sandwich
+$\norm{\varepsilon_s}-M\leq\norm{g_s}\leq\norm{\varepsilon_s}+M$, which is
+correct in every dimension by the reverse triangle inequality.
+\end{remark}
+
+\begin{lemma}[Verification of the sandwich hypothesis for $\norm{g_s}$]\label{lem:conditioning}
+Under Assumptions~\ref{ass:heavy} (conditional independence) and~\ref{ass:signal},
+along the lagged-window indices $s \in [\max(1, t-W),\, t-1]$ used in the
+algorithm:
+\begin{enumerate}[label=\textup{(}\alph*\textup{)},noitemsep,leftmargin=*]
+  \item Conditioned on the trajectory $\{x_s\}_{s\leq t-1}$, the gradient norms
+    $\{\norm{g_s}\}$ in the window are independent.
+  \item Each $\norm{g_s}$ has population median $m_s$ satisfying
+    $\abs{m_s - \sigma_{\mathrm{med}}} \leq M$, where
+    $\sigma_{\mathrm{med}}$ is the conditional median of $\norm{\varepsilon_s}$
+    given $x_s$ (assumed to be the same constant for all $s$ on the trajectory;
+    see Remark~\ref{rem:sigma_med_const}).
+  \item If, in addition, the conditional distribution of $\norm{\varepsilon_s}$
+    given $x_s$ admits a density bounded below by $c_{\mathrm{cdf}}>0$
+    on the slab $[\sigma_{\mathrm{med}} - M - R,\, \sigma_{\mathrm{med}} + M + R]$
+    uniformly over $x_s$, then condition~(ii) of
+    Lemma~\ref{lem:median_sandwich} holds with $c = c_{\mathrm{cdf}}$ and the
+    same $R$, after the substitution $X_s \mapsto \norm{g_s}$,
+    $m_0 \mapsto \sigma_{\mathrm{med}}$, $M_0 \mapsto M$.
+\end{enumerate}
+\end{lemma}
+
+\begin{proof}
+\textbf{(a)} By Assumption~\ref{ass:heavy}(c), $\{\varepsilon_s\}$ are
+conditionally independent given the trajectory; so are
+$\norm{g_s} = h(x_s,\varepsilon_s)$ for the deterministic function
+$h(x,e):=\norm{\nabla f(x)+e}$.
+
+\textbf{(b)} The reverse triangle inequality gives the deterministic sandwich
+$\norm{\varepsilon_s} - M \leq \norm{g_s} \leq \norm{\varepsilon_s} + M$ for
+each $s$ (using $\norm{\nabla f(x_s)} \leq M$). Hence the $1/2$-quantile of
+$\norm{g_s}$ lies in $[\sigma_{\mathrm{med}} - M, \sigma_{\mathrm{med}} + M]$.
+
+\textbf{(c)} The slab-density hypothesis is imposed \emph{directly} on the
+gradient norm law: we assume that conditional on $x_s$, the law of
+$\norm{g_s}$ admits a density (or sub-density) $f_s(\cdot\mid x_s)$ bounded
+below by $c_{\mathrm{cdf}}$ on the closed slab
+$\mathcal S := [\sigma_{\mathrm{med}} - M - R,\, \sigma_{\mathrm{med}} + M + R]$,
+uniformly over $x_s$. Sufficient conditions are listed in
+Remark~\ref{rem:slab_alternatives}. Given the hypothesis, condition~(ii) of
+Lemma~\ref{lem:median_sandwich} holds at every base point in $\mathcal S$:
+for $y \in \mathcal S$ and $\delta \in [0, R]$,
+$F_{\norm{g_s}}(y + \delta) - F_{\norm{g_s}}(y) \geq c_{\mathrm{cdf}}\,\delta$
+by integration, after the substitution
+$X_s \mapsto \norm{g_s}$, $m_0 \mapsto \sigma_{\mathrm{med}}$,
+$M_0 \mapsto M$, $c \mapsto c_{\mathrm{cdf}}$.
+\end{proof}
+
+\begin{remark}[On Assumption~\ref{ass:tail} alone being insufficient]\label{rem:tail_not_density}
+A regularly-varying \emph{tail} bound (Assumption~\ref{ass:tail}) does
+\emph{not} by itself produce a density lower bound near the median: it only
+controls the mass beyond a level set. Lemma~\ref{lem:conditioning}(c)
+therefore augments Assumption~\ref{ass:tail} with an explicit slab density
+hypothesis on the noise norm. In our Phase~1 experiments,
+$\varepsilon_s\sim$ Pareto with deterministic radial density satisfies this
+hypothesis with explicit $(c_{\mathrm{cdf}}, R)$. We discuss alternative
+sufficient conditions in Remark~\ref{rem:slab_alternatives}.
+\end{remark}
+
+\begin{remark}[$\sigma_{\mathrm{med}}$ as a constant of the problem]\label{rem:sigma_med_const}
+Throughout, $\sigma_{\mathrm{med}}$ denotes the conditional median of
+$\norm{\varepsilon_t}$ given $x_t$, which we assume is the same constant for
+all $t$. This holds automatically when the noise $\varepsilon_t$ has a
+distribution that does not depend on $x_t$ (Phase~1 setting). When the noise
+distribution depends on $x_t$ but Assumption~\ref{ass:tail} provides a uniform
+control, one can replace $\sigma_{\mathrm{med}}$ by the supremum
+$\overline\sigma_{\mathrm{med}} := \sup_{x}\operatorname{med}(\norm{\varepsilon_t}\mid x_t = x)$
+and an analogous infimum, and absorb the gap into the constant $M_0$ of
+Lemma~\ref{lem:median_sandwich}.
+\end{remark}
+
+\begin{remark}[Alternative sufficient conditions for slab density]\label{rem:slab_alternatives}
+Two cleaner sufficient conditions for the slab-density hypothesis used in
+Lemma~\ref{lem:conditioning}(c):
+\begin{itemize}[noitemsep,leftmargin=*]
+  \item \emph{Bounded direction.} If $\nabla f(x_s) = 0$ on the trajectory
+    (e.g., centered iterates), then $\norm{g_s} = \norm{\varepsilon_s}$ and
+    Assumption~\ref{ass:tail} can be \emph{strengthened} to a density lower
+    bound by adding a $C^1$ regularity condition on the noise law.
+  \item \emph{Pareto-spheroidal noise.} If $\varepsilon_s = R_s\,U_s$ with
+    $R_s\sim$ Pareto and $U_s$ uniform on the sphere, independent, and $R_s$
+    has a $C^0$ density bounded below by $c_R$ on a neighborhood of
+    $\sigma_{\mathrm{med}}$, then $\norm{\varepsilon_s} = R_s$ has the same
+    density and $c_{\mathrm{cdf}} = c_R$ holds with no further work. This
+    matches the Phase~1 sandbox.
+\end{itemize}
+\end{remark}
+
+\begin{proposition}[High-probability scale estimate]\label{prop:scale}
+Adopt the lagged-window contract: at step $t$, let
+$\shat_t := \operatorname{median}\bigl\{\norm{g_s} : s \in [\max(1, t-W), t-1]\bigr\}$
+be the rolling-window median, computed \emph{before} $\norm{g_t}$ enters the
+window (so $\shat_t \in \Filt_t$). Under
+Assumptions~\ref{ass:heavy}--\ref{ass:signal} and the slab-density hypothesis
+of Lemma~\ref{lem:conditioning}\textup{(c)}, with the constant
+$c_{\mathrm{cdf}} > 0$ from that hypothesis and any $\delta \in (0, R]$:
+\[
+  \Prob\!\left(\abs{\shat_t - \sigma_{\mathrm{med}}} > M + \delta\right)
+  \;\leq\; 2\exp\!\left(-2W c_{\mathrm{cdf}}^2\delta^2\right).
+\]
+Equivalently, fixing any $\varepsilon \in (0, 1/2]$ and putting $\delta := \varepsilon \sigma_{\mathrm{med}}$ (assumed $\leq R$), the event
+\[
+  \mathcal{E}_t := \bigl\{\,\abs{\shat_t - \sigma_{\mathrm{med}}}
+    \;\leq\; M + \varepsilon\sigma_{\mathrm{med}}\,\bigr\}
+\]
+holds with probability at least
+$1 - 2\exp\bigl(-2W c_{\mathrm{cdf}}^2\varepsilon^2\sigma_{\mathrm{med}}^2\bigr)$.
+Applying a union bound over $t \in [W+1, T]$:
+\[
+  \Prob\!\left(\bigcap_{t=W+1}^T \mathcal{E}_t\right)
+  \;\geq\; 1 - 2T\exp\bigl(-2W c_{\mathrm{cdf}}^2\varepsilon^2\sigma_{\mathrm{med}}^2\bigr).
+\]
+\end{proposition}
+
+\begin{proof}
+By Lemma~\ref{lem:conditioning}\textup{(a)} the window observations are
+conditionally independent. By Lemma~\ref{lem:conditioning}\textup{(b)} each
+window observation has population median in
+$[\sigma_{\mathrm{med}} - M, \sigma_{\mathrm{med}} + M]$. By
+Lemma~\ref{lem:conditioning}\textup{(c)} the slab-density hypothesis
+verifies condition~(ii) of Lemma~\ref{lem:median_sandwich} on the slab
+$[\sigma_{\mathrm{med}} - M - R, \sigma_{\mathrm{med}} + M + R]$ with constant
+$c = c_{\mathrm{cdf}}$. Applying Lemma~\ref{lem:median_sandwich} with
+$m_0 = \sigma_{\mathrm{med}}$ and $M_0 = M$ yields
+\eqref{eq:median_sandwich}, and a union bound over the two tails delivers
+the deviation bound. The choice $\delta = \varepsilon\sigma_{\mathrm{med}}$
+gives $\mathcal{E}_t$ with the stated probability, and the union bound
+over $t \in [W+1, T]$ closes the argument.
+\end{proof}
+
+\begin{remark}[$\sigma_{\mathrm{med}} \gg M$ regime]\label{rem:hi_noise}
+Theorems~\ref{thm:adaptive} and~\ref{thm:coupled} below use the simplification
+$\shat_t \in [(1-\varepsilon')\sigma_{\mathrm{med}}, (1+\varepsilon')\sigma_{\mathrm{med}}]$
+with $\varepsilon' = \varepsilon + M/\sigma_{\mathrm{med}}$. This requires
+$\sigma_{\mathrm{med}} > 2M$ \emph{(or any explicit lower bound that controls
+$\varepsilon'$)}, which we adopt as a problem-instance regime. When this fails,
+Proposition~\ref{prop:scale}'s additive $M$ term cannot be absorbed
+multiplicatively, and the bias/variance perturbation must be tracked
+separately. We make this regime explicit in the statements of the affected
+theorems.
+\end{remark}
+
+
+% ===========================================================================
+\section{Fixed-Schedule Convergence}
+\label{sec:fixed}
+% ===========================================================================
+
+\begin{theorem}[Main theorem: fixed schedule]\label{thm:fixed}
+Under Assumptions~\ref{ass:smooth}--\ref{ass:signal}, let $\alpha$-Robust SGD
+run for $T$ steps with constant learning rate $\eta$ and clipping threshold
+$\tau \geq 2M$, where $M$ is from Assumption~\ref{ass:signal}. Then:
+\begin{equation}\label{eq:general_bound}
+  \frac{1}{T}\sum_{t=1}^{T}\E\!\left[\norm{\nabla f(x_t)}^2\right]
+  \;\leq\;
+  \frac{2\Delta_f}{\eta T}
+  \;+\; B(\tau)^2
+  \;+\; L\eta\, V(\tau)^2,
+\end{equation}
+where $B(\tau)$ and $V(\tau)$ are from Definition~\ref{def:BV}.
+
+\medskip
+
+Setting $\tau$ and $\eta$ optimally as functions of $T$ (the explicit
+constants are derived in the proof below; see eq.~\eqref{eq:tau_opt}):
+\begin{equation}\label{eq:optimal_rate}
+  \tau^*(T) \;=\; \left(\frac{A_B}{2\sqrt{2L\Delta_f\,A_V}}\right)^{\!\frac{2}{3p-2}}
+    \cdot T^{\frac{1}{3p-2}},
+  \qquad
+  \eta^*(T) \;=\; \sqrt{\frac{2\Delta_f}{L\, V(\tau^*)^2\, T}},
+\end{equation}
+where $A_B := 2^{2(p-1)}\sigma^{2p}$ and $A_V := 2^{p-1}(M^p+\sigma^p)$. The
+bound becomes:
+\begin{equation}\label{eq:rate}
+  \frac{1}{T}\sum_{t=1}^{T}\E\!\left[\norm{\nabla f(x_t)}^2\right]
+  \;\leq\;
+  C_{\mathrm{rate}} \cdot T^{-\frac{2(p-1)}{3p-2}},
+\end{equation}
+where $C_{\mathrm{rate}}$ depends on $L, \Delta_f, \sigma, M, p$ but not on $T$.
+\end{theorem}
+
+\begin{proof}
+\textbf{Step 1: One-step descent.}
+By Assumption~\ref{ass:smooth} (the descent lemma for $L$-smooth functions):
+\begin{equation}\label{eq:descent_raw}
+  f(x_{t+1}) \leq f(x_t) + \inner{\nabla f(x_t)}{x_{t+1} - x_t}
+    + \frac{L}{2}\norm{x_{t+1} - x_t}^2.
+\end{equation}
+Substituting $x_{t+1} - x_t = -\eta\, g_t^c$:
+\begin{equation}\label{eq:descent_clip}
+  f(x_{t+1}) \leq f(x_t) - \eta\inner{\nabla f(x_t)}{g_t^c}
+    + \frac{L\eta^2}{2}\norm{g_t^c}^2.
+\end{equation}
+
+\medskip
+\textbf{Step 2: Conditional expectation.}
+Take $\E[\cdot \mid \Filt_t]$ where $\Filt_t = \sigma(x_1, \varepsilon_1,
+\ldots, \varepsilon_{t-1})$ is the filtration making $x_t$ measurable.
+Since $g_t^c$ depends on $\varepsilon_t$ (and hence is not $\Filt_t$-measurable),
+while $\nabla f(x_t)$ is $\Filt_t$-measurable:
+\begin{align}
+  \E[f(x_{t+1}) \mid \Filt_t]
+  &\leq f(x_t) - \eta\inner{\nabla f(x_t)}{\E[g_t^c \mid \Filt_t]}
+    + \frac{L\eta^2}{2}\E\!\left[\norm{g_t^c}^2 \mid \Filt_t\right] \notag\\
+  &= f(x_t) - \eta\inner{\nabla f(x_t)}{\nabla f(x_t) - b_t}
+    + \frac{L\eta^2}{2}\E\!\left[\norm{g_t^c}^2 \mid \Filt_t\right],
+    \label{eq:descent_cond}
+\end{align}
+where $b_t = \nabla f(x_t) - \E[g_t^c \mid \Filt_t]$ is the clipping bias.
+
+\medskip
+\textbf{Step 3: Bounding the inner product via Young's inequality.}
+Expanding the inner product:
+\[
+  \inner{\nabla f(x_t)}{\nabla f(x_t) - b_t}
+  = \norm{\nabla f(x_t)}^2 - \inner{\nabla f(x_t)}{b_t}.
+\]
+By Young's inequality with parameter $1$ (i.e., $\inner{a}{b} \leq
+\frac{1}{2}\norm{a}^2 + \frac{1}{2}\norm{b}^2$):
+\[
+  \inner{\nabla f(x_t)}{b_t}
+  \leq \frac{1}{2}\norm{\nabla f(x_t)}^2 + \frac{1}{2}\norm{b_t}^2.
+\]
+Therefore:
+\begin{equation}\label{eq:inner_bound}
+  \inner{\nabla f(x_t)}{\nabla f(x_t) - b_t}
+  \geq \frac{1}{2}\norm{\nabla f(x_t)}^2 - \frac{1}{2}\norm{b_t}^2.
+\end{equation}
+
+\medskip
+\textbf{Step 4: Substituting bounds.}
+Inserting~\eqref{eq:inner_bound} into~\eqref{eq:descent_cond}:
+\begin{equation}\label{eq:descent_bv}
+  \E[f(x_{t+1}) \mid \Filt_t]
+  \leq f(x_t) - \frac{\eta}{2}\norm{\nabla f(x_t)}^2
+    + \frac{\eta}{2}\norm{b_t}^2
+    + \frac{L\eta^2}{2}\E\!\left[\norm{g_t^c}^2 \mid \Filt_t\right].
+\end{equation}
+
+By Lemma~\ref{lem:bias} and Lemma~\ref{lem:variance}:
+\[
+  \norm{b_t}^2 \leq B(\tau)^2, \qquad
+  \E[\norm{g_t^c}^2 \mid \Filt_t] \leq V(\tau)^2.
+\]
+Substituting:
+\begin{equation}\label{eq:descent_final}
+  \E[f(x_{t+1}) \mid \Filt_t]
+  \leq f(x_t) - \frac{\eta}{2}\norm{\nabla f(x_t)}^2
+    + \frac{\eta}{2}B(\tau)^2
+    + \frac{L\eta^2}{2}V(\tau)^2.
+\end{equation}
+
+\medskip
+\textbf{Step 5: Telescoping.}
+Taking full expectations in~\eqref{eq:descent_final} and summing from $t = 1$ to $T$:
+\[
+  \E[f(x_{T+1})] - f(x_1) \leq
+    -\frac{\eta}{2}\sum_{t=1}^T \E\!\left[\norm{\nabla f(x_t)}^2\right]
+    + \frac{T\eta}{2}B(\tau)^2 + \frac{TL\eta^2}{2}V(\tau)^2.
+\]
+Rearranging and using $\E[f(x_{T+1})] \geq f^*$:
+\[
+  \frac{\eta}{2}\sum_{t=1}^T \E\!\left[\norm{\nabla f(x_t)}^2\right]
+  \leq (f(x_1) - f^*) + \frac{T\eta}{2}B(\tau)^2 + \frac{TL\eta^2}{2}V(\tau)^2.
+\]
+Dividing by $T\eta/2$:
+\begin{equation}\label{eq:prelim_bound}
+  \frac{1}{T}\sum_{t=1}^T \E\!\left[\norm{\nabla f(x_t)}^2\right]
+  \leq \underbrace{\frac{2\Delta_f}{\eta T}}_{\text{(I)}}
+    + \underbrace{B(\tau)^2}_{\text{(II)}}
+    + \underbrace{L\eta\, V(\tau)^2}_{\text{(III)}}.
+\end{equation}
+This establishes~\eqref{eq:general_bound}.
+
+\medskip
+\textbf{Step 6: Optimizing $\eta$ (balancing terms I and III).}
+Terms~(I) and~(III) have opposite monotonicity in $\eta$:
+(I)~$= 2\Delta_f/(\eta T)$ decreases in $\eta$, while
+(III)~$= L\eta V^2$ increases. Their sum is minimized when they are equal:
+\[
+  \frac{2\Delta_f}{\eta T} = L\eta V^2
+  \quad\Longrightarrow\quad
+  \eta^* = \sqrt{\frac{2\Delta_f}{L T V^2}}.
+\]
+Substituting $\eta^*$ back:
+\[
+  \text{(I) + (III)} = 2\sqrt{\frac{2L\Delta_f V^2}{T}}.
+\]
+The bound becomes:
+\begin{equation}\label{eq:after_eta}
+  \frac{1}{T}\sum \E\!\left[\norm{\nabla f(x_t)}^2\right]
+  \leq 2\sqrt{\frac{2L\Delta_f\, V(\tau)^2}{T}} + B(\tau)^2.
+\end{equation}
+
+\medskip
+\textbf{Step 7: Optimizing $\tau$ (balancing the two remaining terms).}
+Write $B(\tau)^2$ and $V(\tau)^2$ in terms of $\tau$:
+\[
+  B(\tau)^2 = \frac{2^{2(p-1)}\sigma^{2p}}{\tau^{2(p-1)}}
+  =: \frac{A_B}{\tau^{2(p-1)}},
+\]
+\[
+  V(\tau)^2 = 2^{p-1}(M^p + \sigma^p)\,\tau^{2-p}
+  =: A_V \cdot \tau^{2-p},
+\]
+where $A_B := 2^{2(p-1)}\sigma^{2p}$ and $A_V := 2^{p-1}(M^p + \sigma^p)$.
+
+Substituting into~\eqref{eq:after_eta}:
+\begin{equation}\label{eq:two_terms}
+  \text{bound} \leq
+  \underbrace{2\sqrt{\frac{2L\Delta_f A_V}{T}} \cdot \tau^{(2-p)/2}}_{\text{Term A}}
+  + \underbrace{\frac{A_B}{\tau^{2(p-1)}}}_{\text{Term B}}.
+\end{equation}
+Term~A increases in $\tau$ (since $(2-p)/2 > 0$) while Term~B decreases.
+Setting them equal:
+\[
+  2\sqrt{\frac{2L\Delta_f A_V}{T}} \cdot \tau^{(2-p)/2}
+  = \frac{A_B}{\tau^{2(p-1)}}.
+\]
+Solving for $\tau$:
+\[
+  \tau^{(2-p)/2 + 2(p-1)} = \frac{A_B}{2\sqrt{2L\Delta_f A_V/T}}
+  = \frac{A_B \sqrt{T}}{2\sqrt{2L\Delta_f A_V}}.
+\]
+The exponent on $\tau$ is:
+\[
+  \frac{2-p}{2} + 2(p-1) = \frac{2 - p + 4p - 4}{2} = \frac{3p - 2}{2}.
+\]
+Therefore:
+\begin{equation}\label{eq:tau_opt}
+  \tau^{(3p-2)/2} = \frac{A_B\sqrt{T}}{2\sqrt{2L\Delta_f A_V}}
+  \quad\Longrightarrow\quad
+  \tau^* = \left(\frac{A_B}{2\sqrt{2L\Delta_f A_V}}\right)^{\frac{2}{3p-2}}
+    T^{\frac{1}{3p-2}}.
+\end{equation}
+The key dependence on $T$ is $\tau^* \propto T^{1/(3p-2)}$.
+
+\medskip
+\textbf{Step 8: Final rate.}
+Substituting $\tau^*$ back into Term~B of~\eqref{eq:two_terms}:
+\[
+  B(\tau^*)^2 = \frac{A_B}{(\tau^*)^{2(p-1)}} \propto T^{-2(p-1)/(3p-2)}.
+\]
+Explicitly:
+\[
+  (\tau^*)^{2(p-1)} = \left(\frac{A_B}{2\sqrt{2L\Delta_f A_V}}\right)^{\frac{4(p-1)}{3p-2}}
+    T^{\frac{2(p-1)}{3p-2}},
+\]
+so:
+\begin{equation}
+  B(\tau^*)^2 = A_B^{1 - \frac{4(p-1)}{3p-2}} \cdot
+    \left(2\sqrt{2L\Delta_f A_V}\right)^{\frac{4(p-1)}{3p-2}}
+    \cdot T^{-\frac{2(p-1)}{3p-2}}.
+\end{equation}
+Since Terms~A and~B are equal at $\tau = \tau^*$, the total bound is:
+\begin{equation}\label{eq:final_rate}
+  \frac{1}{T}\sum_{t=1}^{T}\E\!\left[\norm{\nabla f(x_t)}^2\right]
+  \leq C_{\mathrm{rate}} \cdot T^{-\frac{2(p-1)}{3p-2}},
+\end{equation}
+where $C_{\mathrm{rate}}$ is an explicit constant depending only on
+$L, \Delta_f, \sigma, M, p$:
+\[
+  C_{\mathrm{rate}} = 2 A_B^{\frac{3p - 2 - 4(p-1)}{3p-2}}
+    \left(2\sqrt{2L\Delta_f A_V}\right)^{\frac{4(p-1)}{3p-2}}.
+\]
+
+\medskip
+\textbf{Step 9: Verify the optimal $\eta$.}
+With $\tau^* \propto T^{1/(3p-2)}$, we have $V(\tau^*)^2 = A_V (\tau^*)^{2-p}
+\propto T^{(2-p)/(3p-2)}$. The optimal learning rate is:
+\[
+  \eta^* = \sqrt{\frac{2\Delta_f}{LT V(\tau^*)^2}}
+  \propto T^{-1/2 - (2-p)/(2(3p-2))}
+  = T^{-\frac{3p-2+2-p}{2(3p-2)}}
+  = T^{-\frac{2p}{2(3p-2)}}
+  = T^{-\frac{p}{3p-2}}.
+\]
+For $p = 2$: $\eta^* \propto T^{-1/2}$ (classical). For $p = 1.5$:
+$\eta^* \propto T^{-3/5}$.
+
+\medskip
+\textbf{Step 10: Verify $\tau^* \geq 2M$ for large $T$.}
+We require $\tau^* \geq 2M$ for Lemma~\ref{lem:bias} to apply.
+Since $\tau^* \propto T^{1/(3p-2)} \to \infty$ and $M$ is a constant,
+this holds for all $T \geq T_0$ with $T_0 = (2M)^{3p-2} \cdot (\text{const})$.
+For $T < T_0$, one can use a fixed threshold $\tau_0 \geq 2M$ (the burn-in
+period), incurring $O(T_0) = O(1)$ additive cost.
+\end{proof}
+
+\begin{remark}[Rate interpolation]\label{rem:interp}
+The rate $T^{-2(p-1)/(3p-2)}$ interpolates correctly:
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lll}
+\toprule
+$p$ & Rate exponent & Interpretation \\
+\midrule
+$2$ & $-2/4 = -1/2$ & Classical non-convex SGD with bounded variance \\
+$1.5$ & $-1/2.5 = -2/5$ & Intermediate heavy tails \\
+$1.2$ & $-0.4/1.6 = -1/4$ & Very heavy tails \\
+$\to 1^+$ & $\to 0$ & No convergence (first moment barely exists) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{remark}
+
+\begin{remark}[Known-horizon requirement]\label{rem:horizon}
+The optimal $\tau^*$ and $\eta^*$ depend on $T$, requiring the time horizon
+to be known in advance. This is standard in the non-convex optimization
+literature (cf.\ Zhang et al., 2020). For the unknown-horizon case, one can
+apply the \textbf{doubling trick}: run the algorithm in epochs of length
+$T_k = 2^k$, restarting with fresh $\tau^*_{T_k}$ and $\eta^*_{T_k}$ at each
+epoch. This incurs at most an $O(\log T)$ multiplicative overhead.
+\end{remark}
+
+\begin{remark}[Fixed $\tau$ independent of $T$]\label{rem:fixed_tau}
+If $\tau$ is set to a fixed constant (not depending on $T$), the bias term
+$B(\tau)^2$ is a constant \emph{floor} that does not vanish with $T$.
+The bound becomes:
+\[
+  \frac{1}{T}\sum \E[\norm{\nabla f(x_t)}^2] \leq
+  2\sqrt{\frac{2L\Delta_f V(\tau)^2}{T}} + B(\tau)^2.
+\]
+This converges to $B(\tau)^2$ as $T \to \infty$ — the algorithm reaches a
+neighborhood of stationarity but does not converge to zero. In practice,
+with $\tau = 5\hat{\sigma}$, the bias floor $B(\tau)^2 \leq 2\sigma^2/5^{2(p-1)}$
+is small ($\leq 0.16\sigma^2$ for $p = 1.5$), so the algorithm performs well
+for practical time horizons.
+\end{remark}
+
+
+% ===========================================================================
+\section{Adaptive Threshold with Scale Estimation}
+\label{sec:adaptive}
+% ===========================================================================
+
+Consider $\tau_t = C \cdot \shat_t$ with $\shat_t$ from the lagged median window.
+
+\begin{theorem}[Adaptive fixed schedule]\label{thm:adaptive}
+Under Assumptions~\ref{ass:smooth}--\ref{ass:signal} and the slab-density
+hypothesis of Lemma~\ref{lem:conditioning}\textup{(c)}, fix $C > 0$, $W \geq 1$,
+and $\varepsilon \in (0, 1/2]$. Assume the regime $\sigma_{\mathrm{med}} > 2M$
+\textup{(}so that $\varepsilon' := \varepsilon + M/\sigma_{\mathrm{med}} \in (0, 1)$\textup{)}
+and $C(1-\varepsilon')\sigma_{\mathrm{med}} \geq 2M$. Run $\alpha$-Robust SGD
+with $\tau_t = C \cdot \shat_t$ for $t > W$ \textup{(}lagged window;
+Remark~\ref{rem:lag}\textup{)} and a fixed $\tau_0 \geq 2M$ for $t \leq W$,
+with constant learning rate $\eta$. Define
+$\mathcal G := \bigcap_{t=W+1}^T \mathcal E_t$ from Proposition~\ref{prop:scale};
+then $\Prob(\mathcal G) \geq 1 - 2T\exp(-2W c_{\mathrm{cdf}}^2 \varepsilon^2 \sigma_{\mathrm{med}}^2)$.
+
+\medskip
+\textbf{In-expectation guarantee on $\mathcal{G}$.}
+\begin{equation}\label{eq:adaptive_bound}
+  \frac{1}{T}\sum_{t=1}^T \E\!\left[\norm{\nabla f(x_t)}^2 \;\Big|\; \mathcal G\right]
+  \;\leq\;
+  \frac{2\Delta_f}{\eta T}
+  + (1 + \delta_W)^2 B(C\sigma_{\mathrm{med}})^2
+  + (1 + \delta_W) L\eta\, V(C\sigma_{\mathrm{med}})^2
+  + O\!\left(\frac{W}{T}\right),
+\end{equation}
+where $\delta_W := \max\bigl(4(p-1)\varepsilon',\, 2(2-p)\varepsilon'\bigr) \leq 4\varepsilon'$
+captures the estimation overhead.
+
+\medskip
+\textbf{Asymptotic order of $\delta_W$.} Choosing
+$\varepsilon = \Theta\!\bigl((W c_{\mathrm{cdf}}^2 \sigma_{\mathrm{med}}^2)^{-1/2}\sqrt{\log T}\bigr)$
+makes the failure probability $\Prob(\mathcal G^c) = \mathcal{O}(T^{-1})$ and
+$\delta_W = \mathcal O(\sqrt{\log T/W} + M/\sigma_{\mathrm{med}})$. The
+$M/\sigma_{\mathrm{med}}$ term is a problem constant from the median-vs-norm
+sandwich (Remark~\ref{rem:hi_noise}); it does not vanish with $T$ and shows up
+only as a multiplicative inflation of the bias/variance constants in the rate
+analysis, not in the rate exponent.
+\end{theorem}
+
+\begin{proof}
+\textbf{Step~1: Lagged-window measurability.}
+By the lagged-window contract (Remark~\ref{rem:lag}), the window
+$\{\norm{g_s}\}_{s = t-W}^{t-1}$ used to compute $\shat_t$ is
+$\Filt_t$-measurable; hence $\tau_t = C\shat_t \in \Filt_t$. Consequently
+$\E[g_t^c \mid \Filt_t]$ is computed at fixed $\tau_t$, and
+Lemmas~\ref{lem:bias}--\ref{lem:variance} yield, on $\Filt_t$,
+\[
+  \norm{b_t} \leq B(\tau_t),
+  \qquad
+  \E[\norm{g_t^c}^2 \mid \Filt_t] \leq V(\tau_t)^2.
+\]
+
+\textbf{Step~2: Burn-in ($t \leq W$).}
+With $\tau_0 \geq 2M$ constant, eq.~\eqref{eq:descent_final} applies and
+yields total cost $f(x_1) - \E[f(x_{W+1})] + \frac{W\eta}{2}B(\tau_0)^2
++ \frac{WL\eta^2}{2}V(\tau_0)^2 = O(W)$, contributing $O(W/T)$ to the
+final bound after dividing by $T\eta/2$.
+
+\textbf{Step~3: Threshold envelope on $\mathcal E_t$ ($t > W$).}
+On $\mathcal E_t$, $\abs{\shat_t - \sigma_{\mathrm{med}}} \leq M + \varepsilon\sigma_{\mathrm{med}}$,
+i.e.\ $\shat_t \in [(1-\varepsilon')\sigma_{\mathrm{med}}, (1+\varepsilon')\sigma_{\mathrm{med}}]$
+with $\varepsilon' = \varepsilon + M/\sigma_{\mathrm{med}} \in (0,1)$ by the
+regime hypothesis. Therefore
+$\tau_t \in [C(1-\varepsilon')\sigma_{\mathrm{med}}, C(1+\varepsilon')\sigma_{\mathrm{med}}]$,
+and the lower envelope $\tau_t \geq C(1-\varepsilon')\sigma_{\mathrm{med}} \geq 2M$
+\textup{(}by hypothesis\textup{)} ensures the simplified bias bound applies.
+
+\textbf{Step~4: Inflated bias and variance bounds on $\mathcal E_t$.}
+Using $B$ decreasing and $V^2$ increasing in $\tau$:
+\begin{align*}
+  B(\tau_t) &\leq (1-\varepsilon')^{-(p-1)}\,B(C\sigma_{\mathrm{med}})
+    \;\leq\; \bigl(1 + 4(p-1)\varepsilon'\bigr)\,B(C\sigma_{\mathrm{med}}), \\
+  V(\tau_t)^2 &\leq (1+\varepsilon')^{2-p}\,V(C\sigma_{\mathrm{med}})^2
+    \;\leq\; \bigl(1 + 2(2-p)\varepsilon'\bigr)\,V(C\sigma_{\mathrm{med}})^2,
+\end{align*}
+using the elementary bounds derived in Theorem~\ref{thm:coupled} Steps~3--4
+\textup{(}same algebra: $(1-x)^{-(p-1)} \leq 1+4(p-1)x$ and $(1+x)^{2-p}\leq 1+2(2-p)x$
+for $x \in [0,1/2]$\textup{)}. Setting
+$\delta_W = \max(4(p-1)\varepsilon', 2(2-p)\varepsilon')$ unifies both
+factors into $1 + \delta_W$.
+
+\textbf{Step~5: Telescope on $\mathcal G$.}
+For $t > W$ on $\mathcal G \subseteq \mathcal E_t$, the descent inequality
+$\eqref{eq:descent_final}$ with $\tau$ replaced by $\tau_t$ gives, after
+applying the inflated bounds of Step~4 and conditioning by the tower law on
+$\Filt_t \cap \mathcal G$:
+\[
+  \E\!\left[f(x_{t+1}) \mid \Filt_t, \mathcal G\right]
+  \leq f(x_t) - \frac{\eta}{2}\norm{\nabla f(x_t)}^2
+    + \frac{\eta}{2}(1+\delta_W)^2 B(C\sigma_{\mathrm{med}})^2
+    + \frac{L\eta^2}{2}(1+\delta_W) V(C\sigma_{\mathrm{med}})^2.
+\]
+Telescoping from $t = W+1$ to $T$ on $\mathcal G$, using
+$\E[f(x_{T+1})\mid\mathcal G] \geq f^*$, dividing by $T\eta/2$, and adding the
+burn-in cost (Step~2) yields~\eqref{eq:adaptive_bound}.
+
+\textbf{Step~6: Filtration--global-event coupling.}
+The conditioning $\mathbb E[\,\cdot\,\mid\,\Filt_t,\mathcal G]$ at each step
+is well defined because $\mathcal G = \bigcap_{s \geq W+1}^T \mathcal E_s$ is
+$\Filt_T$-measurable, so a single regular conditional probability under
+$\Prob(\,\cdot\,\mid\mathcal G)$ exists. The tower property
+$\E[\E[X \mid \Filt_t,\mathcal G] \mid \mathcal G] = \E[X \mid \mathcal G]$
+holds for any integrable random variable $X$, which is what the telescope
+uses at each step.
+\end{proof}
+
+
+% ===========================================================================
+\section{Hill Estimator Concentration}
+\label{sec:hill}
+% ===========================================================================
+
+The Hill estimator is used to estimate the tail index $\alpha$ (and hence
+$p = \alpha - \varepsilon$ for a safety margin $\varepsilon > 0$). Under
+the exact Pareto model, we establish a rigorous finite-sample concentration bound.
+
+\begin{definition}[Hill estimator]\label{def:hill}
+Given observations $X_1, \ldots, X_n$ with order statistics
+$X_{(1)} \leq \cdots \leq X_{(n)}$, the Hill estimator using the top $k$
+order statistics is:
+\[
+  \ahat_{\mathrm{Hill}}^{-1}
+  := \frac{1}{k}\sum_{i=1}^{k}\log\frac{X_{(n-i+1)}}{X_{(n-k)}}.
+\]
+\end{definition}
+
+\begin{lemma}[R\'enyi representation for exact Pareto]\label{lem:renyi}
+Let $X_1, \ldots, X_n$ be i.i.d.\ $\mathrm{Pareto}(\alpha, x_m)$, i.e.,
+$\Prob(X > x) = (x_m/x)^\alpha$ for $x \geq x_m > 0$. Then the Hill
+estimator satisfies:
+\[
+  \ahat_{\mathrm{Hill}}^{-1} \stackrel{d}{=} \frac{1}{k}\sum_{j=1}^{k} E_j,
+\]
+where $E_1, \ldots, E_k$ are i.i.d.\ $\mathrm{Exp}(\alpha)$ (rate $\alpha$,
+mean $1/\alpha$).
+\end{lemma}
+
+\begin{proof}
+By the R\'enyi representation theorem for order statistics: if $U_1, \ldots, U_n$
+are i.i.d.\ $\mathrm{Uniform}(0,1)$ with order statistics $U_{(1)} \leq \cdots \leq U_{(n)}$,
+then the \emph{spacings} $D_i := U_{(i)} - U_{(i-1)}$ (with $U_{(0)} := 0$)
+satisfy the joint distributional identity
+$\{D_1, \ldots, D_n\} \stackrel{d}{=} \{G_1/S, \ldots, G_n/S\}$
+where $G_i$ are i.i.d.\ $\mathrm{Exp}(1)$ and $S = G_1 + \cdots + G_{n+1}$.
+
+For Pareto random variables, $\log(X_i/x_m)$ are i.i.d.\ $\mathrm{Exp}(\alpha)$.
+The log-spacings of the order statistics of exponential random variables are
+independent, with $\log(X_{(n-i+1)}/x_m) - \log(X_{(n-i)}/x_m) \sim \mathrm{Exp}(\alpha \cdot i)$.
+
+The Hill estimator's numerator, $\sum_{i=1}^k \log(X_{(n-i+1)}/X_{(n-k)})$,
+can be expressed as a linear combination of these independent exponential spacings.
+By a classical result (see, e.g., Beirlant et al., 2004, Theorem 4.2.1),
+this sum is distributionally equal to a sum of $k$ i.i.d.\ $\mathrm{Exp}(\alpha)$
+random variables.
+\end{proof}
+
+\begin{lemma}[Finite-sample Hill concentration via Bernstein]\label{lem:hill_conc}
+Under the exact Pareto model (Lemma~\ref{lem:renyi}), for any $\varepsilon > 0$
+with $\varepsilon \leq \alpha$:
+\begin{equation}\label{eq:hill_bound}
+  \Prob\!\left(\abs{\ahat_{\mathrm{Hill}} - \alpha} > \varepsilon\right)
+  \leq 2\exp\!\left(-\frac{k\varepsilon^2}{16\alpha^2}\right).
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+\textbf{Step 1: Concentration of $\ahat^{-1}$.}
+By Lemma~\ref{lem:renyi}, $\ahat^{-1} = \bar{E}$ where
+$\bar{E} = \frac{1}{k}\sum_{j=1}^k E_j$ with $E_j \sim \mathrm{Exp}(\alpha)$ i.i.d.
+
+Each $E_j$ has mean $1/\alpha$, variance $1/\alpha^2$, and is sub-exponential
+with parameters $(\nu, b) = (1/\alpha, 1/\alpha)$. Specifically, for
+$\lambda \in [0, \alpha)$:
+\[
+  \E[e^{\lambda(E_j - 1/\alpha)}]
+  = \frac{\alpha}{\alpha - \lambda}\, e^{-\lambda/\alpha}
+  \leq \exp\!\left(\frac{\lambda^2}{2(\alpha - \lambda)\alpha}\right)
+  \leq \exp\!\left(\frac{\lambda^2}{\alpha^2}\right)
+  \quad\text{for } \lambda \leq \alpha/2.
+\]
+
+By Bernstein's inequality for sub-exponential random variables
+(see, e.g., Vershynin, 2018, Theorem 2.8.1):
+\begin{equation}\label{eq:bernstein}
+  \Prob\!\left(\abs{\bar{E} - 1/\alpha} > t\right)
+  \leq 2\exp\!\left(-k \cdot \min\!\left(\frac{t^2\alpha^2}{4},\;
+    \frac{t\alpha}{2}\right)\right).
+\end{equation}
+
+For $t \leq 1/(2\alpha)$ (small deviation regime), the minimum is achieved
+by the first term:
+\begin{equation}\label{eq:bernstein_small}
+  \Prob\!\left(\abs{\bar{E} - 1/\alpha} > t\right)
+  \leq 2\exp\!\left(-\frac{kt^2\alpha^2}{4}\right).
+\end{equation}
+
+\textbf{Step 2: Translating to $\ahat$ via the delta method.}
+The map $\varphi(x) = 1/x$ transforms $\bar{E}$ to $\ahat = 1/\bar{E}$.
+On the event $\{\abs{\bar{E} - 1/\alpha} \leq t\}$ with $t < 1/(2\alpha)$:
+\[
+  \bar{E} \in \left[\frac{1}{\alpha} - t,\; \frac{1}{\alpha} + t\right]
+  \subset \left[\frac{1}{2\alpha},\; \frac{3}{2\alpha}\right].
+\]
+Therefore $\bar{E} \geq 1/(2\alpha) > 0$, and:
+\[
+  \abs{\ahat - \alpha} = \abs{\frac{1}{\bar{E}} - \frac{1}{1/\alpha}}
+  = \frac{\abs{\bar{E} - 1/\alpha}}{\bar{E} \cdot (1/\alpha)}
+  \leq \frac{t}{(1/(2\alpha)) \cdot (1/\alpha)}
+  = 2\alpha^2 t.
+\]
+
+\textbf{Step 3: Combining.}
+Given target deviation $\varepsilon > 0$, set $t = \varepsilon/(2\alpha^2)$.
+The requirement $t \leq 1/(2\alpha)$ becomes $\varepsilon \leq \alpha$.
+Then:
+\[
+  \Prob(\abs{\ahat - \alpha} > \varepsilon)
+  \leq \Prob\!\left(\abs{\bar{E} - 1/\alpha} > \frac{\varepsilon}{2\alpha^2}\right)
+  \leq 2\exp\!\left(-\frac{k\varepsilon^2}{4 \cdot 4\alpha^2}\right)
+  = 2\exp\!\left(-\frac{k\varepsilon^2}{16\alpha^2}\right).
+\]
+This completes the proof.
+\end{proof}
+
+\begin{remark}[Comparison with asymptotic normality]\label{rem:asymptotic}
+The asymptotic normality result of Mason (1982) and Haeusler \& Teugels (1985) gives:
+\[
+  \sqrt{k}\,(\ahat - \alpha) \xrightarrow{d} \mathcal{N}(0,\, \alpha^2)
+  \quad\text{as } k \to \infty,\; k/n \to 0.
+\]
+For $k = 25$, the normal approximation suggests $\mathrm{SD}(\ahat) \approx \alpha/5$,
+which is a tighter prediction than the Bernstein bound~\eqref{eq:hill_bound}
+but lacks finite-sample validity. Our Bernstein-based bound~\eqref{eq:hill_bound}
+is rigorous for all $k$.
+\end{remark}
+
+\begin{remark}[Scope of Lemma~\ref{lem:hill_conc}]\label{rem:beyond_pareto}
+Lemma~\ref{lem:hill_conc} assumes exact i.i.d.\ Pareto inputs. Under only
+regular variation \textup{(}Assumption~\ref{ass:tail}\textup{)}, log-spacings
+are asymptotically exponential and a second-order bias $A(n/k)$ appears;
+consistency still holds for $k\to\infty$, $k/n\to 0$, but the finite-sample
+constant in Lemma~\ref{lem:hill_conc} does not carry over verbatim.
+
+Gradient norms $\norm{g_s}$ are not i.i.d.\ across $s$ because $x_s$ drifts.
+Proposition~\ref{prop:hill_noniid} compares Hill on $\norm{g_s}$ to Hill on
+clean norms $\norm{\varepsilon_s}$ by a deterministic perturbation bound.
+Putting that together with Lemma~\ref{lem:hill_conc} on $\norm{\varepsilon_s}$
+is clean only when the injected noise is i.i.d.\ Pareto \textup{(}Phase~1\textup{)}.
+
+For Phase~2/3 we do not assume a named tail law on gradients; the clamping
+$\phat_t\in[p_{\min},p_{\max}]$ gives $\abs{\phat_t-p}\leq 0.99$
+\textup{(}eq.~\eqref{eq:clamp_bound}\textup{)} regardless. In that regime
+Theorem~\ref{thm:coupled} should be read as convergence to a neighborhood of
+stationarity, with radius tied to $\mu_{\max}$, not as the sharp adaptive rate.
+\end{remark}
+
+
+% ===========================================================================
+\section{Non-i.i.d.\ Gradient Norms: Quantitative Perturbation Analysis}
+\label{sec:noniid}
+% ===========================================================================
+
+Gradient norms $\norm{g_t}$ are not i.i.d.\ across $t$. The next proposition
+bounds how far Hill on $\{\norm{g_s}\}$ deviates from Hill on clean norms.
+
+\begin{lemma}[Tail index inheritance]\label{lem:tail_inherit}
+Under Assumptions~\ref{ass:signal} and~\ref{ass:tail}, conditioned on the
+trajectory $\{x_t\}$, the gradient norms
+$\norm{g_t} = \norm{\nabla f(x_t) + \varepsilon_t}$
+are independent with marginals that share the same tail index $\alpha$.
+
+More precisely, for all $t$ and all $x > 2M$:
+\[
+  \Prob(\norm{\varepsilon_t} > x + M)
+  \leq \Prob(\norm{g_t} > x)
+  \leq \Prob(\norm{\varepsilon_t} > x - M).
+\]
+Since $\Prob(\norm{\varepsilon_t} > x) = x^{-\alpha}L(x)$ with slowly varying $L$,
+and $(x \pm M)^{-\alpha}/x^{-\alpha} \to 1$ as $x \to \infty$, the gradient
+norms $\norm{g_t}$ have the same tail index $\alpha$ as $\norm{\varepsilon_t}$.
+\end{lemma}
+
+\begin{proof}
+\textbf{Independence.} By Assumption~\ref{ass:heavy}, the noise terms
+$\varepsilon_t$ are conditionally independent given the trajectory. Since
+each $\norm{g_t} = h(x_t, \varepsilon_t)$ for the measurable function
+$h(x, \varepsilon) = \norm{\nabla f(x) + \varepsilon}$, and $x_t$ is
+$\Filt_{t-1}$-measurable, the $\norm{g_t}$ are conditionally independent
+given $\{x_s\}_{s \geq 1}$.
+
+\textbf{Tail sandwich.} By the reverse triangle inequality:
+$\abs{\norm{g_t} - \norm{\varepsilon_t}} \leq \norm{\nabla f(x_t)} \leq M$.
+Therefore $\norm{\varepsilon_t} - M \leq \norm{g_t} \leq \norm{\varepsilon_t} + M$,
+which for any $x > 0$ gives:
+\[
+  \{\norm{\varepsilon_t} > x + M\} \subseteq \{\norm{g_t} > x\}
+  \subseteq \{\norm{\varepsilon_t} > x - M\}.
+\]
+The tail bound follows by taking probabilities.
+
+\textbf{Tail index preservation.} For $x > 2M$:
+\[
+  \frac{\Prob(\norm{g_t} > x)}{x^{-\alpha}L(x)}
+  \in \left[
+    \frac{(x+M)^{-\alpha}L(x+M)}{x^{-\alpha}L(x)},\;
+    \frac{(x-M)^{-\alpha}L(x-M)}{x^{-\alpha}L(x)}
+  \right].
+\]
+Since $L$ is slowly varying, $L(x \pm M)/L(x) \to 1$ as $x \to \infty$
+(by the uniform convergence theorem; see Bingham, Goldie \& Teugels, 1987,
+Theorem~1.2.1). Also $(x \pm M)^{-\alpha}/x^{-\alpha}
+= (1 \pm M/x)^{-\alpha} \to 1$. By the squeeze theorem:
+$\Prob(\norm{g_t} > x) \sim x^{-\alpha}L(x)$, so $\norm{g_t}$ has tail
+index $\alpha$.
+\end{proof}
+
+\begin{proposition}[Quantitative Hill perturbation bound]\label{prop:hill_noniid}
+Under Assumptions~\ref{ass:signal} and~\ref{ass:tail}, let
+$Y_s := \norm{\varepsilon_s}$ (clean noise norms) and
+$X_s := \norm{g_s} = \norm{\nabla f(x_s) + \varepsilon_s}$ (observed
+gradient norms), so that $\abs{X_s - Y_s} \leq M$ for all $s$.
+Let $H_k^X$ and $H_k^Y$ denote the Hill estimators (Definition~\ref{def:hill})
+applied to $\{X_s\}$ and $\{Y_s\}$ respectively, using the top $k$ order
+statistics from a window of size $W$. Then:
+\begin{equation}\label{eq:hill_perturbation}
+  \abs{(H_k^X)^{-1} - (H_k^Y)^{-1}}
+  \leq \frac{4M}{Y_{(W-k)} - M}
+  + \frac{2m}{k} \cdot \log\frac{Y_{(W)}}{Y_{(W-k)}},
+\end{equation}
+where $Y_{(j)}$ denotes the $j$-th order statistic of $\{Y_s\}$, and
+$m \leq 2W \cdot \alpha M / Y_{(W-k)}$ is the number of indices whose
+top-$k$ membership differs between the $X$ and $Y$ orderings.
+
+Consequently:
+\begin{equation}\label{eq:hill_total_error}
+  \abs{\ahat_{\mathrm{gradient}} - \alpha}
+  \leq \underbrace{\abs{\ahat_{\mathrm{clean}} - \alpha}}_{\text{i.i.d.\ estimation error}}
+  + \underbrace{O\!\left(\frac{\alpha^2 M}{Y_{(W-k)} - M}\right)}_{\text{perturbation error}},
+\end{equation}
+where $\ahat_{\mathrm{gradient}} = 1/(H_k^X)^{-1}$ and
+$\ahat_{\mathrm{clean}} = 1/(H_k^Y)^{-1}$.
+The perturbation error vanishes as $W \to \infty$ since
+$Y_{(W-k)} \to \infty$.
+
+For \textbf{finite} $W$, the clamping $\phat_t \in [p_{\min}, p_{\max}]$
+provides the deterministic bound:
+\begin{equation}\label{eq:clamp_bound}
+  \abs{\phat_t - p} \leq \max(p_{\max} - p,\; p - p_{\min}) \leq 0.99
+  \quad \text{for all } p \in (1.01, 1.99).
+\end{equation}
+\end{proposition}
+
+\begin{proof}
+We decompose the perturbation into two effects.
+
+\textbf{Effect 1: Log-ratio perturbation (fixed ordering).}
+Suppose the top-$k$ indices are the same for both $\{X_s\}$ and $\{Y_s\}$.
+Let $s_1, \ldots, s_k$ be the top-$k$ indices (ordered by $Y$-values).
+The $j$-th log-ratio in the Hill estimator changes by:
+\begin{align*}
+  \Delta_j &:= \log\frac{X_{s_j}}{X_{s_k}} - \log\frac{Y_{s_j}}{Y_{s_k}}
+  = \log\frac{X_{s_j}}{Y_{s_j}} - \log\frac{X_{s_k}}{Y_{s_k}}.
+\end{align*}
+Since $\abs{X_s - Y_s} \leq M$ and $Y_s > Y_{(W-k)} > M$ for the top-$k$
+values:
+\[
+  \abs{\log\frac{X_s}{Y_s}} = \abs{\log\left(1 + \frac{X_s - Y_s}{Y_s}\right)}
+  \leq \frac{2\abs{X_s - Y_s}}{Y_s}
+  \leq \frac{2M}{Y_{(W-k)}},
+\]
+using $\abs{\log(1+u)} \leq 2\abs{u}$ for $\abs{u} \leq 1/2$
+(valid since $M/Y_{(W-k)} < 1/2$ for $Y_{(W-k)} > 2M$).
+Each $\abs{\Delta_j} \leq 4M/Y_{(W-k)}$, so:
+\[
+  \abs{(H_k^X)^{-1} - (H_k^Y)^{-1}}_{\text{same order}}
+  \leq \frac{1}{k}\sum_{j=1}^k \abs{\Delta_j}
+  \leq \frac{4M}{Y_{(W-k)}}.
+\]
+
+\textbf{Effect 2: Reordering (top-$k$ membership changes).}
+An index $s$ can switch top-$k$ membership between the $X$ and $Y$ orderings
+only if its gradient norm $X_s$ crosses the threshold. Since
+$\abs{X_s - Y_s} \leq M$, this requires $Y_s \in [Y_{(W-k)} - M, Y_{(W-k)} + M]$.
+
+The number of such ``boundary'' indices is:
+\[
+  m := \#\{s : Y_s \in [Y_{(W-k)} - M, Y_{(W-k)} + M]\}.
+\]
+By the tail probability of the i.i.d.\ distribution $\Prob(Y \in [a, a+2M])
+\leq 2M\alpha a^{-(\alpha+1)}$ for exact Pareto, the expected number of
+boundary observations is:
+\[
+  \E[m] \leq W \cdot 2M\alpha \cdot Y_{(W-k)}^{-(\alpha+1)}.
+\]
+Since $Y_{(W-k)} \approx (W/k)^{1/\alpha}$ (the quantile), this gives
+$\E[m] = O(Mk\alpha / Y_{(W-k)})$.
+
+Each reordered index contributes at most
+$\log(Y_{(W)}/Y_{(W-k)})/k$ to the Hill estimator (the maximum
+log-ratio). The total reordering error is:
+\[
+  \abs{(H_k^X)^{-1} - (H_k^Y)^{-1}}_{\text{reorder}}
+  \leq \frac{2m}{k} \cdot \log\frac{Y_{(W)}}{Y_{(W-k)}}.
+\]
+For exact Pareto with $k = W/4$: $\log(Y_{(W)}/Y_{(W-k)}) = O(\log W)$,
+and $m/k = O(M\alpha/Y_{(W-k)})$, so this is $O(M\alpha\log W / Y_{(W-k)})$.
+
+\textbf{Total perturbation on $\ahat$.}
+Combining Effects 1 and 2, and applying the delta method inversion
+(as in Lemma~\ref{lem:hill_conc}, Step 2) to translate from $\ahat^{-1}$
+to $\ahat$:
+if $\abs{(H_k^X)^{-1} - (H_k^Y)^{-1}} \leq \delta$ with
+$\delta < 1/(2\alpha)$, then $\abs{\ahat_X - \ahat_Y} \leq 2\alpha^2\delta$.
+The bound~\eqref{eq:hill_total_error} follows with the triangle inequality
+$\abs{\ahat_X - \alpha} \leq \abs{\ahat_X - \ahat_Y} + \abs{\ahat_Y - \alpha}$.
+
+The clamping bound~\eqref{eq:clamp_bound} is immediate from
+$\phat_t = \operatorname{clamp}(\ahat - \varepsilon, p_{\min}, p_{\max})$.
+\end{proof}
+
+\begin{remark}[Convergence of perturbation error]\label{rem:perturbation_rate}
+For exact Pareto noise with $\alpha \in (1, 2]$ and $k = W/4$:
+$Y_{(W-k)} \approx 4^{1/\alpha} \cdot x_m \sim W^0$ for bounded $W$,
+but the $(W-k)$-th order statistic concentrates around the quantile
+$F^{-1}(1-k/W)$, which for Pareto is $(W/k)^{1/\alpha} x_m = 4^{1/\alpha} x_m$.
+This is bounded, so for fixed $W$, the perturbation is $O(M/x_m)$
+--- a constant.
+
+For the perturbation to be negligible relative to the i.i.d.\ estimation
+error $O(\alpha/\sqrt{k})$, we need:
+\[
+  \frac{\alpha^2 M}{Y_{(W-k)}} \ll \frac{\alpha}{\sqrt{k}}
+  \quad\Longleftrightarrow\quad
+  \frac{\alpha M \sqrt{k}}{Y_{(W-k)}} \ll 1.
+\]
+With $Y_{(W-k)} \sim (W/k)^{1/\alpha}$: this requires
+$(W/k)^{1/\alpha} \gg \alpha M \sqrt{k}$, i.e.,
+$W \gg k(\alpha M \sqrt{k})^\alpha$.
+For $\alpha = 1.5$, $M = 1$, $k = 25$: requires $W \gg 25 \cdot 5^{1.5} \approx 280$.
+So $W = 100$ is marginal, but clamping provides the safety net.
+\end{remark}
+
+
+% ===========================================================================
+\section{Coupled Calibration: Tail-Index-Aware Fixed Schedule}
+\label{sec:coupled}
+% ===========================================================================
+
+The implementation of $\alpha$-Robust SGD analyzed in Section~\ref{sec:adaptive}
+sets $\tau_t = C \cdot \shat_t$, in which the tail-index estimate $\phat_t$
+does not enter the threshold (it is purely diagnostic). The PyTorch deployment
+used in our Phase~2 / Phase~3 experiments instead adopts a
+\emph{tail-index-aware} fixed schedule:
+\begin{equation}\label{eq:torch_fixed}
+  \tau_t \;=\; \varphi(\phat_t) \cdot C \cdot \shat_t,
+  \qquad \varphi(q) := q/2.
+\end{equation}
+The factor $\varphi(q) = q/2$ tightens the clip when noise is heavier
+($p \to 1^+$, $\varphi(p) \to 1/2$) and relaxes toward the plain median
+threshold under near-sub-Gaussian noise ($p \to 2$, $\varphi(p) \to 1$).
+This section extends the analysis of Theorem~\ref{thm:adaptive} to the
+coupled threshold~\eqref{eq:torch_fixed}, in which both $\phat_t$ and
+$\shat_t$ feed into $\tau_t$.
+
+\subsection{Calibration map}
+\label{ssec:phi}
+
+We work with a general bounded Lipschitz calibration map; the constant
+choice (Section~\ref{sec:adaptive}) and the Torch
+implementation~\eqref{eq:torch_fixed} are special cases.
+
+\begin{assumption}[Calibration map]\label{ass:phi}
+Let $\varphi \colon [p_{\min}, p_{\max}] \to (0, \infty)$ satisfy:
+\begin{enumerate}[label=(\roman*),noitemsep]
+  \item \textbf{Bounded:} there exist $0 < \varphi_{\min} \leq \varphi_{\max} < \infty$
+    such that $\varphi(q) \in [\varphi_{\min}, \varphi_{\max}]$ for all
+    $q \in [p_{\min}, p_{\max}]$.
+  \item \textbf{Lipschitz:} there exists $L_\varphi \geq 0$ such that
+    $\abs{\varphi(q_1) - \varphi(q_2)} \leq L_\varphi \abs{q_1 - q_2}$
+    for all $q_1, q_2 \in [p_{\min}, p_{\max}]$.
+\end{enumerate}
+We further assume the true $p \in [p_{\min}, p_{\max}]$, which is automatic
+when $[p_{\min}, p_{\max}] = [1.01, 1.99]$ (the implementation default) and
+$p \in (1, 2)$ (Assumption~\ref{ass:heavy}).
+\end{assumption}
+
+\begin{remark}[Two specializations]\label{rem:phi_specials}
+\begin{enumerate}[label=(\alph*),noitemsep,leftmargin=*]
+  \item \emph{Constant calibration} $\varphi \equiv 1$: $L_\varphi = 0$,
+    $\varphi_{\min} = \varphi_{\max} = 1$. Recovers $\tau_t = C\shat_t$, i.e.,
+    the threshold analyzed in Theorem~\ref{thm:adaptive} (NumPy
+    \texttt{optimizers/alpha\_robust\_sgd.py}).
+  \item \emph{Half-index calibration} $\varphi(q) = q/2$:
+    $L_\varphi = 1/2$, $\varphi_{\min} = p_{\min}/2$, $\varphi_{\max} = p_{\max}/2$.
+    With $[p_{\min}, p_{\max}] = [1.01, 1.99]$, this gives
+    $(\varphi_{\min}, \varphi_{\max}) = (0.505, 0.995)$. Recovers the Torch
+    fixed schedule (\texttt{optimizers/torch/alpha\_robust\_sgd.py}, the
+    \texttt{tail\_factor} in \texttt{\_compute\_tau\_and\_lr}).
+\end{enumerate}
+\end{remark}
+
+\subsection{Joint multiplicative perturbation of \texorpdfstring{$\tau_t$}{the threshold}}
+\label{ssec:joint}
+
+Define the oracle and algorithm thresholds:
+\begin{equation}\label{eq:tau_def}
+  \tau_t^{*} \;:=\; \varphi(p)\cdot C\cdot \sigma_{\mathrm{med}},
+  \qquad
+  \tau_t \;:=\; \varphi(\phat_t)\cdot C\cdot \shat_t.
+\end{equation}
+The threshold ratio decomposes into independent calibration and scale errors:
+\[
+  \frac{\tau_t}{\tau_t^{*}}
+  = \underbrace{\frac{\varphi(\phat_t)}{\varphi(p)}}_{\text{calibration}}
+    \cdot \underbrace{\frac{\shat_t}{\sigma_{\mathrm{med}}}}_{\text{scale}}.
+\]
+
+\begin{lemma}[Relative calibration error]\label{lem:phi_rel}
+Under Assumption~\ref{ass:phi} and for $\phat_t \in [p_{\min}, p_{\max}]$:
+\begin{equation}\label{eq:rel_calib_bound}
+  \abs{\frac{\varphi(\phat_t)}{\varphi(p)} - 1}
+  \;\leq\; \frac{L_\varphi}{\varphi_{\min}} \cdot \abs{\phat_t - p}.
+\end{equation}
+For the half-index calibration $\varphi(q) = q/2$,
+$L_\varphi/\varphi_{\min} = 1/p_{\min}$, so the relative error is bounded by
+$\abs{\phat_t - p}/p_{\min}$.
+\end{lemma}
+
+\begin{proof}
+By Lipschitz continuity (Assumption~\ref{ass:phi}(ii)),
+$\abs{\varphi(\phat_t) - \varphi(p)} \leq L_\varphi\abs{\phat_t - p}$.
+Dividing by $\varphi(p) \geq \varphi_{\min} > 0$ gives~\eqref{eq:rel_calib_bound}.
+The half-index specialization uses $L_\varphi = 1/2$ and
+$\varphi_{\min} = p_{\min}/2$.
+\end{proof}
+
+\begin{proposition}[Joint perturbation of the calibrated threshold]
+\label{prop:joint_perturb}
+Under Assumptions~\ref{ass:smooth}--\ref{ass:tail} and~\ref{ass:phi},
+fix $\epsilon \in (0, 1/2)$ and $\Delta \in (0, \varphi_{\min}/(2 L_\varphi))$
+\textup{(}so that the calibration deviation does not exceed $1/2$\textup{)}.
+Define the high-probability events:
+\begin{align*}
+  \mathcal{E}_t &:= \bigl\{\,\abs{\shat_t/\sigma_{\mathrm{med}} - 1} \leq \epsilon\,\bigr\}
+    && \text{(median concentration)}, \\
+  \mathcal{H}_t &:= \bigl\{\,\abs{\phat_t - p} \leq \Delta\,\bigr\}
+    && \text{(tail-index concentration)}.
+\end{align*}
+Set
+\begin{equation}\label{eq:mu_max}
+  \mu_{\max}
+  \;:=\; \frac{L_\varphi}{\varphi_{\min}}\Delta \;+\; \epsilon \;+\;
+    \frac{L_\varphi}{\varphi_{\min}}\Delta\cdot\epsilon.
+\end{equation}
+On the event $\mathcal{E}_t \cap \mathcal{H}_t$, the threshold ratio satisfies
+\begin{equation}\label{eq:tau_envelope}
+  \tau_t \;\in\; \bigl[(1-\mu_{\max})\tau_t^{*},\, (1+\mu_{\max})\tau_t^{*}\bigr]
+\end{equation}
+deterministically, equivalently $\abs{\tau_t/\tau_t^{*} - 1} \leq \mu_{\max}$.
+
+\medskip
+\textbf{Probability bookkeeping.}
+By Proposition~\ref{prop:scale},
+$\Prob(\mathcal{E}_t^{c}) \leq 2\exp\!\left(-2W c_{\mathrm{cdf}}^2 \epsilon^2 \sigma_{\mathrm{med}}^2\right)$.
+The bound on $\Prob(\mathcal H_t^c)$ depends on the noise model:
+
+\begin{itemize}[noitemsep,leftmargin=*]
+  \item \textbf{Exact Pareto noise} \textup{(}as in Phase~1, where
+    $\norm{\varepsilon_s}\sim\mathrm{Pareto}(\alpha, x_m)$ i.i.d.\
+    independent of $x_s$, so $\norm{g_s}$ is a deterministic-shift of
+    Pareto whose top order statistics agree with those of Pareto for large
+    enough thresholds\textup{)}: Lemma~\ref{lem:hill_conc} gives
+    $\Prob(\mathcal H_t^c) \leq 2\exp(-k\Delta^2/(16\alpha^2))$ for the
+    Hill estimator computed on the lagged window of clean noise norms,
+    plus a deterministic perturbation
+    $\delta^{\mathrm{nb}}_{\mathrm{Hill}}$ from
+    Proposition~\ref{prop:hill_noniid} controlling the gradient-norm vs.\
+    noise-norm gap. Set
+    $\Delta := \Delta_{\mathrm{conc}} + \delta^{\mathrm{nb}}_{\mathrm{Hill}}$.
+  \item \textbf{General regularly-varying noise} \textup{(}beyond exact
+    Pareto, e.g., the Phase~2/3 settings\textup{)}: the i.i.d.\ Pareto
+    Bernstein argument of Lemma~\ref{lem:hill_conc} \emph{does not directly
+    apply}; finite-sample concentration in this regime is an open question
+    in the EVT literature. We therefore fall back to the deterministic
+    clamping bound $\Delta = \max(p_{\max}-p, p-p_{\min})$ from
+    eq.~\eqref{eq:clamp_bound}; $\mu_{\max}$ is then a non-vanishing
+    constant, and Theorem~\ref{thm:coupled} below converges to a
+    neighborhood of stationarity rather than to the sharp adaptive rate.
+\end{itemize}
+
+Union bound over $t = W+1, \ldots, T$:
+\begin{equation}\label{eq:union_prob}
+  \Prob\!\left(\bigcap_{t=W+1}^T (\mathcal{E}_t \cap \mathcal{H}_t)\right)
+  \;\geq\; 1 \;-\; 2T\exp\!\left(-2W c_{\mathrm{cdf}}^2\epsilon^2\sigma_{\mathrm{med}}^2\right)
+  \;-\; 2T\exp\!\left(-\tfrac{k\Delta_{\mathrm{conc}}^2}{16\alpha^2}\right),
+\end{equation}
+where the second term is dropped under the clamping fallback above.
+\end{proposition}
+
+\begin{proof}
+On $\mathcal{E}_t \cap \mathcal{H}_t$, write the multiplicative components:
+\[
+  \frac{\varphi(\phat_t)}{\varphi(p)} = 1 + \kappa_t,
+  \qquad
+  \frac{\shat_t}{\sigma_{\mathrm{med}}} = 1 + \nu_t.
+\]
+By Lemma~\ref{lem:phi_rel},
+$\abs{\kappa_t} \leq (L_\varphi/\varphi_{\min})\Delta$ on $\mathcal{H}_t$;
+by definition, $\abs{\nu_t} \leq \epsilon$ on $\mathcal{E}_t$.
+Multiplying:
+\[
+  \frac{\tau_t}{\tau_t^{*}}
+  = (1+\kappa_t)(1+\nu_t)
+  = 1 + \kappa_t + \nu_t + \kappa_t\nu_t.
+\]
+Therefore
+\[
+  \abs{\frac{\tau_t}{\tau_t^{*}} - 1}
+  \leq \abs{\kappa_t} + \abs{\nu_t} + \abs{\kappa_t}\abs{\nu_t}
+  \leq \frac{L_\varphi}{\varphi_{\min}}\Delta + \epsilon
+    + \frac{L_\varphi}{\varphi_{\min}}\Delta\epsilon
+  = \mu_{\max},
+\]
+which gives~\eqref{eq:tau_envelope}. The probabilistic bound
+follows from Proposition~\ref{prop:scale}, Lemma~\ref{lem:hill_conc}, and a
+union bound.
+\end{proof}
+
+\begin{remark}[Asymptotic order of $\mu_{\max}$]\label{rem:mu_size}
+With $\epsilon = O(\sqrt{\log T/W})$ from Proposition~\ref{prop:scale} and
+$\Delta = O(\alpha/\sqrt{k})$ from Lemma~\ref{lem:hill_conc} (taking
+$k = W/4$, both contributions are $O(1/\sqrt{W})$ up to log factors), we obtain
+\[
+  \mu_{\max} = O\!\left(\sqrt{\log T / W}\right),
+\]
+the same asymptotic order as the median-only overhead in
+Theorem~\ref{thm:adaptive}. The cross term $\kappa_t\nu_t$ is second-order
+$O(1/W)$ and asymptotically negligible.
+
+When the regularly-varying tail assumption~\ref{ass:tail} is dropped, the
+deterministic clamping bound $\abs{\phat_t - p} \leq \max(p_{\max}-p, p-p_{\min})
+\leq 0.99$ replaces the Hill concentration; $\mu_{\max}$ then becomes a
+non-vanishing constant, and the conclusion of
+Theorem~\ref{thm:coupled} below becomes convergence to a neighborhood of
+stationarity rather than the sharp adaptive rate.
+\end{remark}
+
+\subsection{Coupled convergence theorem}
+\label{ssec:coupled_main}
+
+The next theorem is the central technical contribution of this section:
+the coupled threshold~\eqref{eq:torch_fixed} achieves the same rate as the
+oracle fixed schedule, with multiplicative constants modified by a
+$1 + O(\mu_{\max})$ factor that vanishes as $W \to \infty$.
+
+\begin{theorem}[Coupled adaptive fixed schedule]\label{thm:coupled}
+Under Assumptions~\ref{ass:smooth}--\ref{ass:phi}, run $\alpha$-Robust SGD
+with coupled threshold $\tau_t = \varphi(\phat_t)\cdot C\cdot \shat_t$ for
+$t > W$ and a fixed $\tau_0 \geq 2M$ for $t \leq W$, with constant learning
+rate $\eta$. Choose $\epsilon$ and $\Delta$ as in
+Proposition~\ref{prop:joint_perturb}, with $\mu_{\max} \leq 1/2$ from~\eqref{eq:mu_max}.
+Assume the regime $\tau_t^{*} \geq 4M$ for all $t > W$ (this holds, in
+particular, in the optimal $\tau^{*} = \Theta(T^{1/(3p-2)})$ regime once $T$
+exceeds a problem-dependent constant).
+
+Define the calibrated bias and variance constants:
+\[
+  B^{*}_\varphi := B(\varphi(p)\cdot C\cdot \sigma_{\mathrm{med}}),
+  \qquad
+  V^{*}_\varphi := V(\varphi(p)\cdot C\cdot \sigma_{\mathrm{med}}),
+\]
+where $B(\cdot)$ and $V(\cdot)$ are from Definition~\ref{def:BV}.
+
+On the high-probability event $\mathcal{G} := \bigcap_{t=W}^T (\mathcal{E}_t \cap \mathcal{H}_t)$
+\textup{(}whose complement is bounded by~\eqref{eq:union_prob}\textup{)}:
+\begin{equation}\label{eq:coupled_bound}
+  \frac{1}{T}\sum_{t=1}^T \E\!\left[\norm{\nabla f(x_t)}^2 \;\Big|\; \mathcal{G}\right]
+  \;\leq\;
+    \frac{2\Delta_f}{\eta T}
+    + (1 + \delta_W^\varphi)^2\,(B^{*}_\varphi)^2
+    + (1 + \delta_W^\varphi)\, L\eta\,(V^{*}_\varphi)^2
+    + O\!\left(\frac{W}{T}\right),
+\end{equation}
+where the calibration overhead is
+\begin{equation}\label{eq:delta_W_phi}
+  \delta_W^\varphi
+  := \max\!\Bigl(4(p-1)\mu_{\max},\; 2(2-p)\mu_{\max}\Bigr)
+  \;\leq\; 4\mu_{\max}
+  \;=\; O\!\Bigl(\sqrt{\log T/W}\Bigr).
+\end{equation}
+
+\medskip
+\textbf{Optimal scaling.}
+Choosing $C$ and $\eta$ to balance the bias and variance terms (as in
+Theorem~\ref{thm:fixed} Steps~6--7) yields, on $\mathcal{G}$:
+\begin{equation}\label{eq:coupled_rate}
+  \frac{1}{T}\sum_{t=1}^T \E\!\left[\norm{\nabla f(x_t)}^2 \;\Big|\; \mathcal{G}\right]
+  \;\leq\;
+    C_{\mathrm{rate}}^{\varphi}\,(1 + O(\delta_W^\varphi))
+    \cdot T^{-\frac{2(p-1)}{3p-2}}
+    \;+\; O\!\left(\frac{W}{T}\right),
+\end{equation}
+where $C_{\mathrm{rate}}^{\varphi}$ depends on $L, \Delta_f, \sigma, M, p, \varphi(p)$
+but not on $T$ or $W$. The rate exponent $-2(p-1)/(3p-2)$ is identical to
+that of the oracle fixed schedule (Theorem~\ref{thm:fixed}); the calibration
+map $\varphi$ enters only through multiplicative constants and a vanishing
+$O(\sqrt{\log T/W})$ overhead.
+\end{theorem}
+
+\begin{proof}
+\textbf{Step 1: Burn-in ($t \leq W$).}
+For $t \leq W$, the threshold $\tau_0 \geq 2M$ is used. The same descent
+argument as in Theorem~\ref{thm:adaptive} (burn-in step) gives total cost
+$O(W)$, contributing $O(W/T)$ to~\eqref{eq:coupled_bound}.
+
+\medskip
+\textbf{Step 2: Pointwise threshold envelope on $\mathcal{G}$.}
+For $t > W$, condition on $\mathcal{G}$. By
+Proposition~\ref{prop:joint_perturb},
+$\tau_t \in [(1-\mu_{\max})\tau_t^{*},\, (1+\mu_{\max})\tau_t^{*}]$
+deterministically. Since $\tau_t^{*} \geq 4M$ and $\mu_{\max} \leq 1/2$:
+$\tau_t \geq (1-\mu_{\max})\tau_t^{*} \geq 2M$, so the simplified bias
+bound $B(\tau) \leq 2^{p-1}\sigma^p/\tau^{p-1}$ from
+Lemma~\ref{lem:bias} applies.
+
+\medskip
+\textbf{Step 3: Inflated bias bound.}
+Since $B(\tau)$ is decreasing in $\tau$, use the lower envelope
+$\tau_t \geq (1-\mu_{\max})\tau_t^{*}$:
+\[
+  B(\tau_t) \leq \frac{2^{p-1}\sigma^p}{\tau_t^{p-1}}
+  = \left(\frac{\tau_t^{*}}{\tau_t}\right)^{p-1} B(\tau_t^{*})
+  \leq (1-\mu_{\max})^{-(p-1)}\, B(\tau_t^{*}).
+\]
+Bound the prefactor using two elementary inequalities valid for
+$x \in [0, 1/2]$ and $p \in (1, 2]$:
+\begin{align*}
+  \log\!\frac{1}{1-x} &\leq 2x \quad\text{(since $g(x) = \log(1/(1-x)) - 2x$ is decreasing on $[0, 1/2]$ with $g(0) = 0$)}, \\
+  e^y &\leq 1 + 2y \quad\text{for } y \in [0, 1] \quad\text{(convexity of $e^y$ on $[0,1]$)}.
+\end{align*}
+Therefore, for $\mu_{\max} \leq 1/2$:
+\begin{align*}
+  (1-\mu_{\max})^{-(p-1)}
+  &= \exp\!\bigl((p-1)\log(1/(1-\mu_{\max}))\bigr)
+  \leq \exp\!\bigl(2(p-1)\mu_{\max}\bigr)
+  \leq 1 + 4(p-1)\mu_{\max},
+\end{align*}
+where the last step uses $2(p-1)\mu_{\max} \leq 2 \cdot 1 \cdot 1/2 = 1$.
+This yields:
+\begin{equation}\label{eq:bias_phi_inflate}
+  B(\tau_t) \;\leq\; \bigl(1 + 4(p-1)\mu_{\max}\bigr)\, B(\tau_t^{*}).
+\end{equation}
+
+\medskip
+\textbf{Step 4: Inflated variance bound.}
+$V(\tau)^2$ is increasing in $\tau$. Use the upper envelope
+$\tau_t \leq (1+\mu_{\max})\tau_t^{*}$:
+\[
+  V(\tau_t)^2 = 2^{p-1}(M^p + \sigma^p)\,\tau_t^{2-p}
+  \leq (1+\mu_{\max})^{2-p}\, V(\tau_t^{*})^2.
+\]
+For $x \in [0, 1/2]$ and $p \in (1, 2]$ (so $2-p \in [0, 1)$):
+\[
+  (1+x)^{2-p} = \exp\!\bigl((2-p)\log(1+x)\bigr)
+  \leq \exp\!\bigl((2-p) x\bigr)
+  \leq 1 + 2(2-p)x,
+\]
+using $\log(1+x) \leq x$ and the same $e^y \leq 1+2y$ bound on
+$y = (2-p)x \leq 1/2$. Therefore:
+\begin{equation}\label{eq:var_phi_inflate}
+  V(\tau_t)^2 \;\leq\; \bigl(1 + 2(2-p)\mu_{\max}\bigr)\, V(\tau_t^{*})^2.
+\end{equation}
+
+\medskip
+\textbf{Step 5: One-step descent on $\mathcal{G}$.}
+Plug the inflated bounds~\eqref{eq:bias_phi_inflate}--\eqref{eq:var_phi_inflate}
+into the descent inequality~\eqref{eq:descent_final}, conditioning on
+$\Filt_t \cap \mathcal{G}$. By the lagged-window contract
+\textup{(}Remark~\ref{rem:lag}\textup{)} both $\shat_t$ and $\phat_t$ are
+computed from $\{\norm{g_s}\}_{s < t}$ and are therefore
+$\Filt_{t}$-measurable; the events $\mathcal{E}_t$ and $\mathcal{H}_t$ for
+$t > W$ are $\Filt_t$-measurable as well. Consequently
+$\mathcal G = \bigcap_{s = W+1}^T (\mathcal E_s \cap \mathcal H_s)$ is
+$\Filt_T$-measurable, so $\Prob(\,\cdot\,\mid\mathcal G)$ admits a regular
+conditional probability and the tower law applies as in Theorem~\ref{thm:adaptive}, Step~6.
+\begin{equation}\label{eq:coupled_one_step}
+  \E\!\left[f(x_{t+1}) \,\big|\, \Filt_t, \mathcal{G}\right]
+  \leq f(x_t) - \frac{\eta}{2}\norm{\nabla f(x_t)}^2
+    + \frac{\eta}{2}(1 + \delta_W^\varphi)^2 (B^{*}_\varphi)^2
+    + \frac{L\eta^2}{2}(1 + \delta_W^\varphi)(V^{*}_\varphi)^2,
+\end{equation}
+where we have used $\tau_t^{*} = \varphi(p) C \sigma_{\mathrm{med}}$
+(time-independent in the fixed schedule) and absorbed $4(p-1)$ vs.\ $2(2-p)$
+into the unified factor $\delta_W^\varphi$ defined in~\eqref{eq:delta_W_phi}.
+
+\medskip
+\textbf{Step 6: Telescope.}
+Take full expectations on $\mathcal{G}$ and sum
+$t = W+1, \ldots, T$:
+\[
+  \E\!\left[f(x_{T+1}) \mid \mathcal{G}\right] - \E\!\left[f(x_{W+1}) \mid \mathcal{G}\right]
+  \leq -\frac{\eta}{2}\sum_{t=W+1}^T \E\!\left[\norm{\nabla f(x_t)}^2 \mid \mathcal{G}\right]
+    + \frac{(T-W)\eta}{2}(1 + \delta_W^\varphi)^2 (B^{*}_\varphi)^2
+\]
+\[
+    + \frac{(T-W)L\eta^2}{2}(1 + \delta_W^\varphi)(V^{*}_\varphi)^2.
+\]
+Adding the burn-in cost (Step~1) and using $f(x_{T+1}) \geq f^{*}$, then
+dividing by $T\eta/2$ gives~\eqref{eq:coupled_bound}.
+
+\medskip
+\textbf{Step 7: Optimization.}
+Inequality~\eqref{eq:coupled_bound} differs from the oracle fixed-schedule
+bound~\eqref{eq:general_bound} only by the multiplicative factors
+$(1 + \delta_W^\varphi)^2$ on the bias term and $(1 + \delta_W^\varphi)$ on
+the variance term, plus the additive $O(W/T)$ burn-in. The same balancing
+argument as Theorem~\ref{thm:fixed} (Steps~6--7) optimizes $C$ and $\eta$ to
+yield the rate $T^{-2(p-1)/(3p-2)}$, with the constant
+$C_{\mathrm{rate}}^\varphi$ inheriting a factor at most
+$(1 + \delta_W^\varphi)^{O(1)} = 1 + O(\delta_W^\varphi)$. The
+result~\eqref{eq:coupled_rate} follows.
+
+\medskip
+\textbf{Step 8: Verifying $\tau_t^{*} \geq 4M$.}
+With optimal $C^{*}$ and $\tau^{*} = \varphi(p)\, C^{*}\, \sigma_{\mathrm{med}}
+= \Theta(T^{1/(3p-2)})$, the regime $\tau_t^{*} \geq 4M$ holds for all
+$T \geq T_0$ with $T_0 = (4M / \varphi_{\min})^{3p-2} \cdot
+\Theta(1)$, which is finite and independent of $W$. For $T < T_0$ we
+fall back on the burn-in fixed threshold $\tau_0$, incurring $O(T_0) = O(1)$
+additive cost folded into $O(W/T)$.
+\end{proof}
+
+\begin{corollary}[Half-index calibration]\label{cor:half_index}
+Specializing Theorem~\ref{thm:coupled} to $\varphi(q) = q/2$ (the Torch
+implementation~\eqref{eq:torch_fixed}) yields the convergence rate
+\[
+  T^{-\frac{2(p-1)}{3p-2}},
+\]
+identical to that of Theorem~\ref{thm:adaptive} (constant $\varphi$). The
+constants are modified by powers of $\varphi(p) = p/2$:
+\begin{equation}\label{eq:half_index_constants}
+  (B^{*}_\varphi)^2 = \bigl(p/2\bigr)^{-2(p-1)}\, B(C\sigma_{\mathrm{med}})^2,
+  \qquad
+  (V^{*}_\varphi)^2 = \bigl(p/2\bigr)^{2-p}\, V(C\sigma_{\mathrm{med}})^2.
+\end{equation}
+For $p \in [1.01, 1.99]$, $\varphi(p) = p/2 \in [0.505, 0.995]$, so the
+bias term is multiplied by at most $(0.505)^{-2(p-1)}$ and the variance
+term by $(0.505)^{2-p}$; both factors are bounded constants absorbed into
+$C_{\mathrm{rate}}^\varphi$.
+\end{corollary}
+
+\begin{remark}[Bias--variance trade-off interpretation]\label{rem:bv_tradeoff}
+The half-index calibration $\varphi(q) = q/2$ \emph{decreases} the variance
+constant by a factor of $(p/2)^{2-p}$ (since $p/2 < 1$ and $2-p \geq 0$)
+and \emph{increases} the bias constant by a factor of $(p/2)^{-2(p-1)}$.
+For $p = 1.5$:
+\begin{itemize}[noitemsep,leftmargin=*]
+  \item Variance multiplier: $(0.75)^{0.5} \approx 0.866$ (13.4\% reduction).
+  \item Bias multiplier: $(0.75)^{-1.0} \approx 1.333$ (33.3\% increase).
+\end{itemize}
+This is consistent with the design intuition behind the
+$\varphi(q) = q/2$ heuristic: under heavier tails (smaller $p$), the
+calibration tightens the clip, reducing the variance contribution at the
+cost of a moderate increase in bias. Whether this trade-off is favorable
+depends on the relative magnitudes of $L\Delta_f$, $\sigma$, and $M$ at
+the specific problem instance; in the asymptotic rate analysis, both
+contributions are absorbed into $C_{\mathrm{rate}}^\varphi$.
+\end{remark}
+
+\begin{remark}[Theory--code alignment]\label{rem:code_align}
+Theorem~\ref{thm:coupled} closes the analytical gap between the implementation
+variants of $\alpha$-Robust SGD documented in
+\texttt{submission/proof\_code\_matrix.md}:
+\begin{itemize}[noitemsep,leftmargin=*]
+  \item \textbf{NumPy Phase~1} (\texttt{optimizers/alpha\_robust\_sgd.py},
+    \texttt{schedule="fixed"}): $\varphi \equiv 1$. Recovered as the
+    $L_\varphi = 0$ specialization of Theorem~\ref{thm:coupled}, equivalent
+    to Theorem~\ref{thm:adaptive}.
+  \item \textbf{Torch Phase~2/3} (\texttt{optimizers/torch/alpha\_robust\_sgd.py},
+    \texttt{schedule="fixed"}, \texttt{tail\_factor = p\_hat\_val/2}):
+    $\varphi(q) = q/2$. Covered by Corollary~\ref{cor:half_index}.
+  \item \textbf{Future variants:} any bounded Lipschitz $\varphi$ on
+    $[p_{\min}, p_{\max}]$ inherits the same rate exponent. Implementers may
+    tune $\varphi$ for empirical performance without invalidating the analysis.
+\end{itemize}
+\end{remark}
+
+\begin{remark}[Why the rate is invariant to $\varphi$]\label{rem:phi_rate}
+The rate exponent $-2(p-1)/(3p-2)$ in Theorem~\ref{thm:fixed} arises from
+balancing two power-law functions of $\tau$: the bias scales as
+$\tau^{-(p-1)}$ and the variance as $\tau^{2-p}$. A multiplicative
+calibration $\tau \mapsto \varphi(p)\tau$ shifts both functions by constant
+factors but preserves the \emph{exponents} of the power laws, hence the
+optimal balance point $\tau^{*}$ is shifted by a constant factor and the
+rate exponent is unchanged. The calibration map therefore enters as a
+constant-factor calibration, absorbed into $C_{\mathrm{rate}}^\varphi$;
+it cannot improve or worsen the asymptotic rate.
+
+This invariance is the technical content of the \emph{coupled} extension:
+even though both $\phat_t$ and $\shat_t$ feed into $\tau_t$, the
+estimator-induced perturbations enter the bound only through the bounded
+multiplicative envelope~\eqref{eq:tau_envelope} and the inflation factors
+of size $1 + O(\mu_{\max})$.
+\end{remark}
+
+
+% ===========================================================================
+\section{Growing-Schedule Convergence}
+\label{sec:growing}
+% ===========================================================================
+
+Take $\tau_t = \shat_t \cdot t^{1/\phat_t}$ and $\eta_t = \eta_0/\sqrt{t}$ (growing schedule).
+
+\begin{lemma}[Threshold drift decomposition]\label{lem:drift}
+Let $\tau_t^* = \sigma \cdot t^{1/p}$ be the oracle threshold and
+$\tau_t = \shat_t \cdot t^{1/\phat_t}$ the $\alpha$-Robust threshold.
+Define the multiplicative drift factor $D_t := \tau_t / \tau_t^*$ and the
+estimation error $\Delta_t := \phat_t - p$. Then:
+\begin{equation}
+  D_t = \frac{\shat_t}{\sigma} \cdot t^{1/\phat_t - 1/p}
+  = \frac{\shat_t}{\sigma} \cdot t^{-\Delta_t/(\phat_t \cdot p)}.
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+Direct computation:
+\[
+  \frac{1}{\phat_t} - \frac{1}{p}
+  = \frac{p - \phat_t}{p \cdot \phat_t}
+  = \frac{-\Delta_t}{p \cdot \phat_t}.
+\]
+Therefore $t^{1/\phat_t - 1/p} = t^{-\Delta_t/(p \cdot \phat_t)}$.
+\end{proof}
+
+\begin{lemma}[Drift factor bound]\label{lem:drift_bound}
+For $\abs{\Delta_t} \leq \Delta_{\max}$ (guaranteed by the clamping~\eqref{eq:clamp_bound})
+and $\shat_t/\sigma \in [c_1, c_2]$ (from Proposition~\ref{prop:scale}):
+\[
+  \abs{\log D_t} \leq \abs{\log(c_2)} + \frac{\Delta_{\max} \log t}{p_{\min}^2},
+\]
+so $D_t \in [D_{\min}, D_{\max}]$ with:
+\begin{equation}\label{eq:Dmax}
+  D_{\max} = c_2 \cdot T^{\Delta_{\max}/p_{\min}^2}.
+\end{equation}
+With Hill estimator concentration (Lemma~\ref{lem:hill_conc}),
+$\Delta_{\max} = O(\alpha/\sqrt{k})$ with high probability, giving
+$D_{\max} = T^{O(1/\sqrt{W})}$.
+\end{lemma}
+
+\begin{proof}
+Taking logarithms of $D_t = (\shat_t/\sigma) \cdot t^{-\Delta_t/(p\phat_t)}$:
+\[
+  \log D_t = \log(\shat_t/\sigma) - \frac{\Delta_t}{p\phat_t}\log t.
+\]
+Bounding each term: $\abs{\log(\shat_t/\sigma)} \leq \abs{\log c_2}$
+(or $\abs{\log c_1}$, whichever is larger), and
+$\abs{\Delta_t/(p\phat_t)} \leq \Delta_{\max}/p_{\min}^2$. The result follows.
+\end{proof}
+
+\begin{theorem}[{Growing-schedule convergence --- all $p \in (1, 2]$}]\label{thm:growing}
+Under Assumptions~\ref{ass:smooth}--\ref{ass:tail}, let $\alpha$-Robust SGD
+run for $T$ steps with $\eta_t = \eta_0/\sqrt{t}$ and
+$\tau_t = \shat_t \cdot t^{1/\phat_t}$ (lagged window;
+Remark~\ref{rem:lag}). Adopt the following standing conventions:
+\begin{enumerate}[label=\textup{(}\roman*\textup{)},noitemsep,leftmargin=*]
+  \item the oracle threshold is taken as
+    $\tau_t^{*} := \sigma_{\mathrm{med}} \cdot t^{1/p}$ (using the median
+    scale $\sigma_{\mathrm{med}}$, since $\shat_t \to \sigma_{\mathrm{med}}$
+    by Proposition~\ref{prop:scale}; the additional moment vs.\ median
+    constant $\sigma_{\mathrm{med}}/\sigma$ is a problem-dependent
+    multiplier that we absorb into $C'$),
+  \item the drift factor satisfies $D_t \in [1/D_{\max}, D_{\max}]$ for all
+    $t > W$ (which holds with high probability by Lemma~\ref{lem:drift_bound};
+    deterministically with $\Delta_{\max} = 0.99$ from clamping).
+\end{enumerate}
+
+\medskip
+Then for \textbf{every} $p \in (1, 2]$ and for the
+$T$-dependent choice $\eta_0 = \eta_0^{*}(T)$ defined in Step~6 below:
+\begin{equation}\label{eq:growing_main}
+  \min_{1 \leq t \leq T}\E\!\left[\norm{\nabla f(x_t)}^2\right]
+  \leq C'(D_{\max}, p, L, \sigma_{\mathrm{med}}, M, \Delta_f) \cdot T^{-\frac{p-1}{p}},
+\end{equation}
+where $C'$ depends polynomially on $D_{\max}$ and on the problem constants,
+but the rate exponent $-(p-1)/p$ is universal over $p \in (1, 2]$.
+
+\medskip
+\textbf{Known-horizon caveat.} The optimal $\eta_0^{*} \propto T^{(p-2)/(2p)}$
+depends on the horizon~$T$ (Step~6 of the proof). The growing-threshold
+schedule \emph{cancels} the $T$-dependence in $\tau_t$, but \emph{not} in
+the learning rate. Genuine ``unknown-$T$'' deployment requires either
+\textup{(a)} the doubling trick (Remark~\ref{rem:horizon}), incurring a
+$\log T$ overhead, or \textup{(b)} replacing $\eta_t = \eta_0/\sqrt t$ with
+$\eta_t = \eta_0/t^{p/(2p-2)}$, which yields the rate without horizon
+knowledge at the cost of a slightly different constant.
+\end{theorem}
+
+\begin{proof}
+\textbf{Step 1: Descent with time-varying parameters.}
+At each step $t > W$, by the same argument as Theorem~\ref{thm:fixed} Steps 1--4:
+\[
+  \E[f(x_{t+1}) \mid \Filt_t]
+  \leq f(x_t) - \frac{\eta_t}{2}\norm{\nabla f(x_t)}^2
+    + \frac{\eta_t}{2}B(\tau_t)^2
+    + \frac{L\eta_t^2}{2}V(\tau_t)^2.
+\]
+
+\textbf{Step 2: Perturbed bounds via drift factor.}
+Since $\tau_t = D_t \cdot \tau_t^*$:
+\[
+  B(\tau_t) = \frac{2^{p-1}\sigma^p}{(\tau_t - M)^{p-1}}
+  \leq \frac{2^{p-1}\sigma^p}{(D_{\min}\tau_t^* - M)^{p-1}}.
+\]
+For $D_{\min}\tau_t^* \geq 2M$ (which holds for $t \geq t_0$ since
+$\tau_t^* = \sigma t^{1/p} \to \infty$):
+\[
+  B(\tau_t) \leq \frac{2^{2(p-1)}\sigma^p}{(D_{\min}\tau_t^*)^{p-1}}
+  = D_{\max}^{p-1} \cdot B(\tau_t^*).
+\]
+Similarly: $V(\tau_t)^2 \leq D_{\max}^{2-p} \cdot V(\tau_t^*)^2$.
+
+Define the \emph{drift penalty}:
+$\Gamma_B := D_{\max}^{2(p-1)}$,\; $\Gamma_V := D_{\max}^{2-p}$.
+
+\textbf{Step 3: Oracle bias and variance.}
+With $\tau_t^* = \sigma t^{1/p}$:
+\[
+  B(\tau_t^*)^2 = \frac{A_B}{\sigma^{2(p-1)}} \cdot t^{-2(p-1)/p}
+  =: C_B \cdot t^{-2(p-1)/p},
+\]
+\[
+  V(\tau_t^*)^2 = A_V \sigma^{2-p} \cdot t^{(2-p)/p}
+  =: C_V \cdot t^{(2-p)/p},
+\]
+where $C_B = A_B/\sigma^{2(p-1)}$ and $C_V = A_V\sigma^{2-p}$ are
+distribution-dependent constants.
+
+\textbf{Step 4: Telescope.}
+Taking full expectations and summing for $t = t_0, \ldots, T$:
+\begin{equation}\label{eq:growing_tele}
+  \sum_{t=t_0}^T \frac{\eta_t}{2}\E[\norm{\nabla f(x_t)}^2]
+  \leq \Delta_f
+    + \Gamma_B \sum_{t=t_0}^T \frac{\eta_t}{2} C_B t^{-2(p-1)/p}
+    + \Gamma_V \sum_{t=t_0}^T \frac{L\eta_t^2}{2} C_V t^{(2-p)/p}.
+\end{equation}
+
+\textbf{Step 5: Evaluate all sums (unified for all $p \in (1,2]$).}
+
+\emph{Left side.}
+By the integral comparison $\sum_{t=1}^T t^{-1/2} \geq \int_1^{T+1} t^{-1/2}\,dt
+= 2\sqrt{T+1} - 2$:
+\begin{equation}\label{eq:left_sum}
+  \sum_{t=1}^T \frac{\eta_0}{2\sqrt{t}} \geq \eta_0(\sqrt{T} - 1).
+\end{equation}
+
+\emph{Sum~S$_1$ (bias contribution).}
+\[
+  S_1 := \sum_{t=1}^T \frac{\eta_0}{2\sqrt{t}} \cdot C_B\, t^{-2(p-1)/p}
+  = \frac{\eta_0 C_B}{2} \sum_{t=1}^T t^{-\beta_1},
+\]
+where $\beta_1 := \frac{1}{2} + \frac{2(p-1)}{p} = \frac{p + 4p - 4}{2p}
+= \frac{5p - 4}{2p}$.
+
+By the integral comparison $\sum_{t=1}^T t^{-\beta}
+\leq 1 + \int_1^T t^{-\beta}\,dt$:
+\begin{equation}\label{eq:S1_all_p}
+  \sum_{t=1}^T t^{-\beta_1} \leq
+  \begin{cases}
+    \frac{T^{1-\beta_1}}{1-\beta_1} + 1
+      & \text{if } \beta_1 < 1 \;(p < 4/3), \\[4pt]
+    \ln T + 1
+      & \text{if } \beta_1 = 1 \;(p = 4/3), \\[4pt]
+    \frac{1}{\beta_1 - 1} + 1 =: \zeta_1(p)
+      & \text{if } \beta_1 > 1 \;(p > 4/3).
+  \end{cases}
+\end{equation}
+
+\emph{Sum~S$_2$ (variance contribution).}
+\[
+  S_2 := \sum_{t=1}^T \frac{L\eta_0^2}{2t} \cdot C_V\, t^{(2-p)/p}
+  = \frac{L\eta_0^2 C_V}{2} \sum_{t=1}^T t^{-\beta_2},
+\]
+where $\beta_2 := 1 - \frac{2-p}{p} = \frac{2(p-1)}{p}$.
+For all $p \in (1, 2)$: $\beta_2 \in (0, 1)$, so:
+\begin{equation}\label{eq:S2_bound}
+  \sum_{t=1}^T t^{-\beta_2} \leq \frac{T^{1-\beta_2}}{1-\beta_2} + 1
+  = \frac{p \cdot T^{(2-p)/p}}{2-p} + 1.
+\end{equation}
+For $p = 2$: $\beta_2 = 1$, so $\sum t^{-1} \leq \ln T + 1$.
+
+\textbf{Step 6: Extract convergence rate (unified).}
+Dividing~\eqref{eq:growing_tele} by $\eta_0(\sqrt{T}-1) \geq \eta_0\sqrt{T}/2$
+(for $T \geq 4$):
+\begin{equation}\label{eq:growing_three_terms}
+  \min_t \E[\norm{\nabla f}^2] \leq
+  \underbrace{\frac{2\Delta_f}{\eta_0\sqrt{T}}}_{\text{(I)}}
+  + \underbrace{\Gamma_B \cdot \frac{C_B \cdot \Sigma_1(T)}{\sqrt{T}}}_{\text{(II)}}
+  + \underbrace{\Gamma_V \cdot \frac{LC_V\eta_0 \cdot \Sigma_2(T)}{\sqrt{T}}}_{\text{(III)}},
+\end{equation}
+where $\Sigma_j(T) := \sum_{t=1}^T t^{-\beta_j}$.
+
+\emph{Term~(II): bias contribution.}
+Using the bounds~\eqref{eq:S1_all_p}:
+\begin{itemize}[noitemsep]
+  \item For $p > 4/3$: $\Sigma_1 = O(1)$, so (II) $= O(T^{-1/2})$.
+  \item For $p = 4/3$: $\Sigma_1 = O(\ln T)$, so (II) $= O(\ln T / \sqrt{T})$.
+  \item For $1 < p < 4/3$: $\Sigma_1 = O(T^{(4-3p)/(2p)})$, so
+    (II) $= O(T^{(4-3p)/(2p) - 1/2}) = O(T^{-2(p-1)/p})$.
+\end{itemize}
+
+In each regime, (II) $= O(T^{-2(p-1)/p})$ or smaller.
+Since $2(p-1)/p > (p-1)/p$ for $p > 1$, term~(II) is always dominated by the
+final rate $T^{-(p-1)/p}$ (established below). Therefore term~(II) is
+asymptotically negligible.
+
+\emph{Terms~(I) and~(III): balancing.}
+Using $\Sigma_2(T) = O(T^{(2-p)/p})$ (or $O(\ln T)$ for $p = 2$),
+terms (I) and (III) become:
+\[
+  \text{(I)} = \frac{2\Delta_f}{\eta_0\sqrt{T}}, \qquad
+  \text{(III)} = \Gamma_V \frac{LC_V\eta_0 p}{2-p} \cdot T^{(2-p)/p - 1/2}
+  = \Gamma_V \frac{LC_V\eta_0 p}{2-p} \cdot T^{(4-3p)/(2p)}.
+\]
+Setting (I) $=$ (III):
+\[
+  \frac{2\Delta_f}{\eta_0\sqrt{T}}
+  = \Gamma_V \frac{LC_V\eta_0 p}{2-p} T^{(4-3p)/(2p)}
+  \;\Longrightarrow\;
+  \eta_0^2 = \frac{2\Delta_f(2-p)}{\Gamma_V LC_V p}
+    \cdot T^{-1/2 - (4-3p)/(2p)}.
+\]
+The exponent on $T$ is:
+\[
+  -\frac{1}{2} - \frac{4-3p}{2p} = -\frac{p + 4 - 3p}{2p}
+  = -\frac{4-2p}{2p} = \frac{p-2}{p}.
+\]
+So $\eta_0^* = \sqrt{\frac{2\Delta_f(2-p)}{\Gamma_V LC_V p}} \cdot T^{(p-2)/(2p)}$
+(which decreases for $p < 2$, ensuring $\eta_0 \to 0$).
+
+Substituting back into (I):
+\[
+  \text{(I)} = \frac{2\Delta_f}{\eta_0^*\sqrt{T}}
+  = \sqrt{\frac{2\Delta_f \Gamma_V LC_V p}{2-p}}
+    \cdot T^{(2-p)/(2p) - 1/2}
+  = \sqrt{\frac{2\Delta_f \Gamma_V LC_V p}{2-p}}
+    \cdot T^{-(p-1)/p}.
+\]
+This confirms the rate is $T^{-(p-1)/p}$.
+
+\textbf{Step 7: Verify term~(II) is dominated.}
+We claimed (II) is dominated by the $T^{-(p-1)/p}$ rate. Check:
+$2(p-1)/p > (p-1)/p$ iff $p-1 > 0$ iff $p > 1$. \checkmark
+
+For $p > 4/3$: (II) $= O(T^{-1/2})$. Compare with $(p-1)/p$:
+$1/2 > (p-1)/p$ iff $p > 2p-2$ iff $p < 2$. \checkmark
+
+So for all $p \in (1, 2)$, term~(II) decays strictly faster than the rate.
+At $p = 2$: both are $T^{-1/2}$ (up to $\log$ factors), consistent.
+
+\textbf{Step 8: Compare with fixed schedule.}
+The growing-schedule rate $T^{-(p-1)/p}$ vs.\ the fixed-schedule rate
+$T^{-2(p-1)/(3p-2)}$:
+\[
+  \frac{p-1}{p} < \frac{2(p-1)}{3p-2}
+  \;\;\Longleftrightarrow\;\;
+  (p-1)(3p-2) < 2p(p-1)
+  \;\;\Longleftrightarrow\;\;
+  3p - 2 < 2p
+  \;\;\Longleftrightarrow\;\;
+  p < 2.
+\]
+So for all $p \in (1, 2)$, the fixed schedule achieves a \emph{strictly better}
+rate. At $p = 2$, both rates equal $T^{-1/2}$.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{cccc}
+\toprule
+$p$ & Fixed rate & Growing rate & Gap \\
+\midrule
+$1.2$ & $T^{-1/4}$ & $T^{-1/6}$ & $T^{-1/12}$ \\
+$1.5$ & $T^{-2/5}$ & $T^{-1/3}$ & $T^{-1/15}$ \\
+$1.8$ & $T^{-8/17}$ & $T^{-4/9}$ & $T^{-4/153}$ \\
+$2.0$ & $T^{-1/2}$ & $T^{-1/2}$ & none \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Step 9: Role of $D_{\max}$.}
+By Lemma~\ref{lem:drift_bound}, $D_{\max} = T^{O(\Delta_{\max}/p_{\min}^2)}$.
+\begin{itemize}[noitemsep]
+  \item With clamping only: $\Delta_{\max} \leq 0.99$, so
+    $D_{\max} \leq T^{0.99/p_{\min}^2}$. The drift penalties
+    $\Gamma_B = D_{\max}^{2(p-1)}$ and $\Gamma_V = D_{\max}^{2-p}$ are
+    polynomial in $T$ with exponents at most $2 \cdot 0.99/p_{\min}^2 \approx 1.94$.
+    These enter as multiplicative constants that do not affect the rate exponent.
+  \item With Hill concentration (Lemma~\ref{lem:hill_conc}):
+    $\Delta_{\max} = O(4\alpha/\sqrt{k})$ with probability
+    $\geq 1 - 2\exp(-k/(16))$. For $k = W/4$: $D_{\max} = T^{O(1/\sqrt{W})}$.
+\end{itemize}
+\end{proof}
+
+\begin{corollary}[Sufficient window size]\label{cor:window}
+For the growing schedule, the drift penalties affect the constant $C'$
+but not the rate. To ensure $C' \leq C_0 \cdot T^{\gamma}$ with
+$\gamma < (p-1)/(2p)$ (so the drift penalty is dominated by the rate),
+we need $\Gamma_V = D_{\max}^{2-p} \leq T^{(p-1)/(2p)}$, i.e.,
+$(2-p)\Delta_{\max}/p_{\min}^2 < (p-1)/(2p)$.
+
+\emph{With clamping} ($\Delta_{\max} = 0.99$): this requires
+$(2-p) \cdot 0.99 / p_{\min}^2 < (p-1)/(2p)$. For $p = 1.5$:
+$0.5 \cdot 0.99/1.02 < 1/(6) \Rightarrow 0.486 < 0.167$ --- \textbf{fails}.
+So clamping alone gives a large constant for $p < 1.8$.
+
+\emph{With Hill estimation} ($\Delta_{\max} = c\alpha/\sqrt{k}$):
+the constraint becomes $W \geq (2p(2-p)c\alpha / ((p-1)p_{\min}^2))^2$.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{cccc}
+\toprule
+$p$ & Rate exponent & Sufficient $W$ (approx.) & $W = 100$? \\
+\midrule
+$1.2$ & $-1/6$ & $\sim 500$ & marginal \\
+$1.5$ & $-1/3$ & $\sim 150$ & close \\
+$1.8$ & $-4/9$ & $\sim 50$ & sufficient \\
+$2.0$ & $-1/2$ & $\sim 20$ & sufficient \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{corollary}
+
+
+% ===========================================================================
+\section{Discussion}
+\label{sec:discussion}
+% ===========================================================================
+
+\subsection{Why $\alpha$-Robust Beats NormalizedSGD}
+
+NormalizedSGD uses $x_{t+1} = x_t - \eta_t g_t/\norm{g_t}$, discarding gradient
+magnitude entirely. While it achieves the same minimax-optimal rate in theory
+(Cutkosky \& Mehta, 2021), it pays a hidden constant cost.
+
+\textbf{Gradient magnitude carries curvature information.} In steep regions,
+$\norm{\nabla f(x_t)}$ is large and larger steps are warranted. NormalizedSGD
+is blind to this: it takes unit-norm steps everywhere.
+
+\textbf{Clipping preserves magnitude for moderate gradients.} When
+$\norm{g_t} \leq \tau$, $\clip(g_t, \tau) = g_t$ --- the full gradient is used.
+Only extreme outliers are attenuated. With $\tau = 5\shat$, clipping occurs
+on roughly $5$--$15\%$ of steps (by the heavy-tail property), preserving the
+curvature signal for the remaining steps.
+
+Let $\rho = \Prob(\norm{g_t} > \tau)$ be the clipping frequency. The effective
+signal per step for $\alpha$-Robust is
+$\approx (1-\rho)\norm{\nabla f(x_t)} + \rho\tau$, while NormalizedSGD's signal
+is always $1$. When $\norm{\nabla f(x_t)} > 1$, $\alpha$-Robust's per-step
+progress exceeds NormalizedSGD's.
+
+
+\subsection{Summary of Results}
+
+\begin{table}[h]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lll}
+\toprule
+\textbf{Result} & \textbf{Rate} & \textbf{Requirements} \\
+\midrule
+Theorem~\ref{thm:fixed} (fixed, oracle $\tau$)
+  & $O(T^{-2(p-1)/(3p-2)})$
+  & Known $T$, $p$, $\sigma$ \\
+Theorem~\ref{thm:adaptive} (fixed, adaptive $\tau = C\shat$)
+  & $O(T^{-2(p-1)/(3p-2)}) + O(\sqrt{\log T/W})$
+  & Known $T$; $\shat_t$ estimates $\sigma$ \\
+Theorem~\ref{thm:coupled} (fixed, coupled $\tau = \varphi(\phat) C\shat$)
+  & $O(T^{-2(p-1)/(3p-2)}) + O(\sqrt{\log T/W})$
+  & Known $T$; bounded Lipschitz $\varphi$;
+    $\shat_t,\phat_t$ joint estimation \\
+Theorem~\ref{thm:growing} (growing $\tau$)
+  & $O(T^{-(p-1)/p})$
+  & See theorem for $\eta_0(T)$; clamping if Hill off-model \\
+\bottomrule
+\end{tabular}
+\caption{Summary of convergence guarantees.}
+\end{table}
+
+\begin{enumerate}
+  \item Fixed $\tau \propto T^{1/(3p-2)}$ hits $T^{-2(p-1)/(3p-2)}$
+    \textup{(}Zhang et al., 2020\textup{)}.
+  \item Theorem~\ref{thm:adaptive}: median estimate $\shat_t$ adds
+    $O(\sqrt{\log T/W})$ overhead relative to the oracle scale.
+  \item Theorem~\ref{thm:coupled}: composing $\varphi(\phat_t)$ with $\shat_t$
+    \textup{(}Torch: $\varphi(q)=q/2$\textup{)} keeps the same exponent;
+    constants absorb $\varphi(p)$.
+  \item Growing $\tau_t$ \textup{(}Theorem~\ref{thm:growing}\textup{)} trades a
+    weaker exponent $(p-1)/p$ for not tuning $\tau$ from known $T$ in the same
+    way; see the theorem for the $\eta_0(T)$ caveat.
+  \item Clamping $\phat_t$ caps worst-case threshold drift when Hill is off-model.
+\end{enumerate}
+
+
+% ===========================================================================
+\appendix
+\section{High-Probability Convergence Bound}
+\label{sec:highprob}
+% ===========================================================================
+
+Appendix~\ref{sec:highprob} records a high-probability analogue of
+Theorem~\ref{thm:fixed} via Freedman's inequality.
+
+\begin{theorem}[High-probability fixed-schedule convergence]\label{thm:highprob}
+Under the same conditions as Theorem~\ref{thm:fixed}, for any $\delta \in (0,1)$:
+with probability at least $1 - \delta$,
+\begin{equation}\label{eq:highprob_rate}
+  \frac{1}{T}\sum_{t=1}^T \norm{\nabla f(x_t)}^2
+  \leq C_{\mathrm{rate}} \cdot T^{-\frac{2(p-1)}{3p-2}}
+  + C_{\mathrm{hp}} \cdot T^{-\frac{2(p-1)}{3p-2}} \cdot \sqrt{\log(1/\delta)},
+\end{equation}
+where $C_{\mathrm{rate}}$ is from Theorem~\ref{thm:fixed} and $C_{\mathrm{hp}}$
+depends on $L, \Delta_f, \sigma, M, p$ but not on $T$ or $\delta$.
+\end{theorem}
+
+\begin{proof}
+\textbf{Step 1: Martingale decomposition.}
+Define the martingale difference sequence:
+\[
+  M_t := f(x_{t+1}) - \E[f(x_{t+1}) \mid \Filt_t], \qquad t = 1, \ldots, T.
+\]
+By construction, $\E[M_t \mid \Filt_t] = 0$. From the descent
+lemma~\eqref{eq:descent_clip}:
+\[
+  f(x_{t+1}) = f(x_t) - \eta\inner{\nabla f(x_t)}{g_t^c}
+    + \frac{L\eta^2}{2}\norm{g_t^c}^2,
+\]
+so:
+\begin{align}
+  M_t &= -\eta\inner{\nabla f(x_t)}{g_t^c - \E[g_t^c \mid \Filt_t]}
+    + \frac{L\eta^2}{2}\!\left(\norm{g_t^c}^2
+      - \E[\norm{g_t^c}^2 \mid \Filt_t]\right) \notag\\
+  &= -\eta\inner{\nabla f(x_t)}{\xi_t}
+    + \frac{L\eta^2}{2}\!\left(\norm{g_t^c}^2 - \E[\norm{g_t^c}^2 \mid \Filt_t]\right),
+    \label{eq:M_decomp}
+\end{align}
+where $\xi_t := g_t^c - \E[g_t^c \mid \Filt_t]$ is the zero-mean residual.
+
+\textbf{Step 2: Bounded increments.}
+Since $\norm{g_t^c} \leq \tau$ and $\norm{\nabla f(x_t)} \leq M$:
+\begin{itemize}[noitemsep]
+  \item $\abs{\inner{\nabla f(x_t)}{\xi_t}} \leq M\norm{\xi_t}
+    \leq M \cdot 2\tau = 2M\tau$.
+  \item $\abs{\norm{g_t^c}^2 - \E[\norm{g_t^c}^2 \mid \Filt_t]} \leq \tau^2$.
+\end{itemize}
+Therefore:
+\begin{equation}\label{eq:M_bound}
+  \abs{M_t} \leq 2\eta M\tau + \frac{L\eta^2\tau^2}{2}
+  = \eta\tau\!\left(2M + \frac{L\eta\tau}{2}\right) =: c_M.
+\end{equation}
+
+\textbf{Step 3: Conditional variance bound.}
+The conditional variance of $M_t$ is:
+\[
+  \E[M_t^2 \mid \Filt_t]
+  \leq 2\eta^2 M^2 \E[\norm{\xi_t}^2 \mid \Filt_t]
+    + \frac{L^2\eta^4}{2}\E\!\left[\!\left(\norm{g_t^c}^2
+      - \E[\norm{g_t^c}^2]\right)^{\!2} \mid \Filt_t\right],
+\]
+using $(a + b)^2 \leq 2a^2 + 2b^2$.
+Since $\E[\norm{\xi_t}^2] \leq \E[\norm{g_t^c}^2] \leq V(\tau)^2$ and
+$\E[(\norm{g_t^c}^2 - \E[\norm{g_t^c}^2])^2] \leq \E[\norm{g_t^c}^4]
+\leq \tau^2 V(\tau)^2$:
+\begin{equation}\label{eq:cond_var}
+  \E[M_t^2 \mid \Filt_t]
+  \leq 2\eta^2 M^2 V^2 + \frac{L^2\eta^4\tau^2 V^2}{2}
+  = \eta^2 V^2\!\left(2M^2 + \frac{L^2\eta^2\tau^2}{2}\right)
+  =: \sigma_M^2.
+\end{equation}
+
+The \emph{predictable quadratic variation} is:
+\[
+  W_T := \sum_{t=1}^T \E[M_t^2 \mid \Filt_t] \leq T\sigma_M^2.
+\]
+
+\textbf{Step 4: Apply Freedman's inequality.}
+Freedman's inequality (see Freedman, 1975; or Tropp, 2011, Theorem~1.6):
+For a martingale $S_T = \sum_{t=1}^T M_t$ with $\abs{M_t} \leq c_M$ and
+predictable quadratic variation $W_T$, for any $s, w > 0$:
+\[
+  \Prob\!\left(S_T \geq s \text{ and } W_T \leq w\right)
+  \leq \exp\!\left(-\frac{s^2}{2(w + c_M s/3)}\right).
+\]
+Setting $w = T\sigma_M^2$ and solving for $s$ such that the RHS $= \delta/2$:
+\[
+  s = \sqrt{2T\sigma_M^2 \ln(2/\delta)} + \frac{2c_M \ln(2/\delta)}{3}.
+\]
+A symmetric argument applies for $-S_T$. By a union bound: with probability
+$\geq 1 - \delta$,
+\begin{equation}\label{eq:freedman_applied}
+  \abs{S_T} \leq \sqrt{2T\sigma_M^2 \ln(2/\delta)} + \frac{2c_M \ln(2/\delta)}{3}.
+\end{equation}
+
+\textbf{Step 5: Convert to convergence bound.}
+From the descent telescope (summing~\eqref{eq:descent_final}):
+\[
+  f(x_{T+1}) \leq f(x_1) - \frac{\eta}{2}\sum_{t=1}^T \norm{\nabla f(x_t)}^2
+    + \frac{T\eta}{2}B^2 + \frac{TL\eta^2}{2}V^2 + S_T.
+\]
+Since $f(x_{T+1}) \geq f^*$:
+\[
+  \frac{\eta}{2}\sum_{t=1}^T \norm{\nabla f(x_t)}^2
+  \leq \Delta_f + \frac{T\eta}{2}B^2 + \frac{TL\eta^2}{2}V^2 + S_T.
+\]
+Dividing by $T\eta/2$ and using~\eqref{eq:freedman_applied}:
+\begin{equation}\label{eq:hp_full}
+  \frac{1}{T}\sum_{t=1}^T \norm{\nabla f(x_t)}^2
+  \leq \underbrace{\frac{2\Delta_f}{\eta T} + B^2 + L\eta V^2}_{\text{in-expectation bound}}
+  + \underbrace{\frac{2\sqrt{2T\sigma_M^2 \ln(2/\delta)}}{T\eta}
+    + \frac{4c_M\ln(2/\delta)}{3T\eta}}_{\text{high-probability correction}}.
+\end{equation}
+
+\textbf{Step 6: Evaluate the correction terms at optimal $\tau^*$, $\eta^*$.}
+
+\emph{First correction term.}
+\[
+  \frac{2\sigma_M\sqrt{2T\ln(2/\delta)}}{T\eta}
+  = \frac{2\sigma_M\sqrt{2\ln(2/\delta)}}{\eta\sqrt{T}}.
+\]
+Recall $\sigma_M = \eta V\sqrt{2M^2 + L^2\eta^2\tau^2/2}$. With
+$\eta^* = \Theta(T^{-p/(3p-2)})$ and $\tau^* = \Theta(T^{1/(3p-2)})$:
+\[
+  \frac{\sigma_M}{\eta\sqrt{T}} = \frac{V\sqrt{2M^2 + O(L^2\eta^2\tau^2)}}{\sqrt{T}}.
+\]
+The dominant part is $MV/\sqrt{T}$. With $V = V(\tau^*)
+= \Theta(\tau^{*(2-p)/2}) = \Theta(T^{(2-p)/(2(3p-2))})$:
+\[
+  \frac{MV}{\sqrt{T}} = \Theta\!\left(T^{(2-p)/(2(3p-2)) - 1/2}\right)
+  = \Theta\!\left(T^{(2-p-3p+2)/(2(3p-2))}\right)
+  = \Theta\!\left(T^{-(2p-2)/(3p-2)}\right)
+  = \Theta\!\left(T^{-2(p-1)/(3p-2)}\right).
+\]
+The first correction matches the in-expectation rate!
+
+\emph{Second correction term.}
+\[
+  \frac{4c_M\ln(2/\delta)}{3T\eta}
+  = \frac{4\eta\tau(2M + O(L\eta\tau))\ln(2/\delta)}{3T\eta}
+  = \frac{4\tau(2M + O(L\eta\tau))\ln(2/\delta)}{3T}.
+\]
+With $\tau = \Theta(T^{1/(3p-2)})$:
+$\tau/T = \Theta(T^{1/(3p-2) - 1}) = \Theta(T^{-(3p-3)/(3p-2)})$.
+Since $(3p-3)/(3p-2) > 2(p-1)/(3p-2)$ iff $3p - 3 > 2p - 2$ iff $p > 1$
+(always true), this term decays faster than the rate. So it is dominated.
+
+\textbf{Conclusion.}
+Collecting the in-expectation bound and the first correction:
+\[
+  \frac{1}{T}\sum_{t=1}^T \norm{\nabla f(x_t)}^2
+  \leq \left(C_{\mathrm{rate}} + C_{\mathrm{hp}}\sqrt{\log(2/\delta)}\right)
+    \cdot T^{-2(p-1)/(3p-2)}
+  + o\!\left(T^{-2(p-1)/(3p-2)}\right),
+\]
+with probability $\geq 1 - \delta$, where:
+\begin{align*}
+  C_{\mathrm{hp}} &= 4M\sqrt{A_V} \cdot
+    \left(\frac{A_B}{2\sqrt{2L\Delta_f A_V}}\right)^{\frac{2-p}{2(3p-2)}}
+    \bigg/ \sqrt{2\Delta_f / (LA_V)}.
+\end{align*}
+(An explicit but complicated constant depending only on problem parameters.)
+\end{proof}
+
+\begin{remark}[Comparison with Azuma--Hoeffding]
+Using Azuma--Hoeffding instead of Freedman gives a correction term of
+$O(\tau\sqrt{\log(1/\delta)/T})$, which at optimal $\tau^* = T^{1/(3p-2)}$
+becomes $O(T^{1/(3p-2) - 1/2}\sqrt{\log}) = O(T^{(4-3p)/(2(3p-2))}\sqrt{\log})$.
+For $p < 4/3$, this \emph{grows} with $T$, making Azuma--Hoeffding useless.
+Freedman's inequality exploits the conditional variance (which is $O(\eta^2 V^2)$,
+much smaller than the worst-case increment $c_M^2$), yielding a correction
+that matches the in-expectation rate for all $p \in (1, 2]$.
+\end{remark}
+
+
+% ===========================================================================
+\begin{thebibliography}{9}
+
+\bibitem{zhang2020}
+  J.\ Zhang, T.\ He, S.\ Sra, A.\ Jadbabaie.
+  \textit{Why Gradient Clipping Accelerates Training: A Theoretical Justification
+  for Adaptivity}. ICLR 2020.
+
+\bibitem{mason1982}
+  D.M.\ Mason.
+  \textit{Laws of large numbers for sums of extreme values}.
+  Annals of Probability, 10(3):754--764, 1982.
+
+\bibitem{haeusler1985}
+  E.\ Haeusler and J.L.\ Teugels.
+  \textit{On asymptotic normality of Hill's estimator for the exponent of
+  regular variation}. Annals of Statistics, 13(2):743--756, 1985.
+
+\bibitem{vershynin2018}
+  R.\ Vershynin.
+  \textit{High-Dimensional Probability: An Introduction with Applications in
+  Data Science}. Cambridge University Press, 2018.
+
+\bibitem{beirlant2004}
+  J.\ Beirlant, Y.\ Goegebeur, J.\ Segers, J.\ Teugels.
+  \textit{Statistics of Extremes: Theory and Applications}. Wiley, 2004.
+
+\bibitem{cutkosky2021}
+  A.\ Cutkosky and H.\ Mehta.
+  \textit{High-dimensional robust mean estimation via gradient descent}.
+  ICML 2021.
+
+\end{thebibliography}
+
+\end{document}

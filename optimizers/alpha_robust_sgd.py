@@ -84,9 +84,11 @@ class AlphaRobustSGD:
     # ------------------------------------------------------------------
 
     def step(self, x: np.ndarray, grad: np.ndarray, t: int) -> np.ndarray:
+        # Lagged-window contract (matches \mathcal F_t-measurability used in
+        # theory/convergence_proof.tex Theorems 2-4): tau_t is computed BEFORE
+        # the current step's norm enters the rolling window / Hill estimator,
+        # so tau_t depends only on {||g_s|| : s < t}.
         grad_norm = float(np.linalg.norm(grad))
-        self._norm_window.append(grad_norm)
-        self._hill.update(grad_norm)
         self._log_grad_norm.append(grad_norm)
 
         tau, lr_t = self._compute_tau_and_lr(t)
@@ -94,6 +96,10 @@ class AlphaRobustSGD:
         self._log_lr.append(lr_t)
 
         clipped = clip_gradient(grad, tau)
+
+        self._norm_window.append(grad_norm)
+        self._hill.update(grad_norm)
+
         return x - lr_t * clipped
 
     def reset(self):

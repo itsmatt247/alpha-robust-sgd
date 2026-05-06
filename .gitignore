@@ -22,14 +22,27 @@ report/*.log
 report/*.out
 report/*.toc
 
-# Tracked in git: optimizers/, envs/, experiments/, utils/, paper/figures/ only.
+# Core repo: optimizers/, envs/, experiments/, utils/, paper/figures/.
+# Theory write-up: theory/convergence_proof.tex; audit: submission/theory_audit_vs_convergence_proof.md.
 scripts/
 presentation/
-submission/
 report/
-theory/
 neurips2026_style/
 CLAUDE.md
 paper/*.tex
 paper/*.pdf
 paper/*.sty
+
+# submission/: track audit only (see negation below)
+submission/*
+!submission/theory_audit_vs_convergence_proof.md
+
+# LaTeX build artifacts (theory/)
+theory/*.aux
+theory/*.log
+theory/*.out
+theory/*.toc
+theory/*.fdb_latexmk
+theory/*.fls
+theory/*.synctex.gz
+theory/*.pdf

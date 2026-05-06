@@ -1,0 +1,7 @@
+#!/bin/sh
+# Strip Cursor-injected co-author trailers (IDE adds them to the message file).
+# Repo uses: git config core.hooksPath .githooks
+_msg="${1:-}"
+[ -n "$_msg" ] && [ -f "$_msg" ] || exit 0
+_tmp=$(mktemp) || exit 0
+grep -Ev 'cursoragent@cursor\.com|^Co-authored-by:[[:space:]]*[Cc]ursor' "$_msg" > "$_tmp" && mv "$_tmp" "$_msg"

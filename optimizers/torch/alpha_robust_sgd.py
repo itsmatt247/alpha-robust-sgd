@@ -114,15 +114,9 @@ class AlphaRobustSGD(Optimizer):
         grad_norm = self._global_grad_norm()
         self._log_grad_norm.append(grad_norm)
 
-        if self.deferred_hill:
-            # Accumulate norm; Hill update deferred to flush_hill_update()
-            self._rollout_norms.append(grad_norm)
-        else:
-            # Standard mode: update Hill estimator every step
-            self._norm_window.append(grad_norm)
-            self._hill.update(grad_norm)
-
-        # 2. Compute threshold and effective LR
+        # 2. Compute threshold and effective LR using ONLY past norms.
+        # tau_t is F_t-measurable (sigma_hat / p_hat depend on ||g_s||, s < t),
+        # matching theory/convergence_proof.tex (Theorems 2-4).
         tau, lr_eff = self._compute_tau_and_lr(t)
         self._log_tau.append(tau)
 
@@ -153,6 +147,13 @@ class AlphaRobustSGD(Optimizer):
                         d_p = state['momentum_buffer']
 
                 p.add_(d_p, alpha=-lr_eff)
+
+        # 5. Update window/Hill AFTER tau_t was used (lagged-window contract).
+        if self.deferred_hill:
+            self._rollout_norms.append(grad_norm)
+        else:
+            self._norm_window.append(grad_norm)
+            self._hill.update(grad_norm)
 
         return loss
 

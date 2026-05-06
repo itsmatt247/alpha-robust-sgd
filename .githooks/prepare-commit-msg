@@ -1,0 +1,6 @@
+#!/bin/sh
+# Same strip as commit-msg; runs when Cursor builds the commit message template.
+_msg="${1:-}"
+[ -n "$_msg" ] && [ -f "$_msg" ] || exit 0
+_tmp=$(mktemp) || exit 0
+grep -Ev 'cursoragent@cursor\.com|^Co-authored-by:[[:space:]]*[Cc]ursor' "$_msg" > "$_tmp" && mv "$_tmp" "$_msg"
