@@ -1,20 +1,5 @@
 # Convergence Proof for α-Robust SGD
 
-> **Status (2026-05-05):** This Markdown file is the **legacy draft**. The
-> canonical, submission-grade version with the **coupled-calibration
-> extension** (Theorem `thm:coupled`, Corollary `cor:half_index`,
-> Proposition `prop:joint_perturb`) is in
-> [`convergence_proof.tex`](./convergence_proof.tex) (Section 6:
-> "Coupled Calibration: Tail-Index-Aware Fixed Schedule"). The .tex
-> covers both implementation variants:
->
-> - **NumPy** `optimizers/alpha_robust_sgd.py` — `τ = C σ̂` (\(\varphi\equiv 1\))
-> - **Torch** `optimizers/torch/alpha_robust_sgd.py` — `τ = (p̂/2) C σ̂` (\(\varphi(q)=q/2\))
->
-> Both give the same rate \(T^{-2(p-1)/(3p-2)}\) up to a vanishing
-> \(O(\sqrt{\log T/W})\) overhead. See `submission/theory_audit_vs_convergence_proof.md`
-> for the full audit; D1 is now resolved.
-
 ## Setup and Notation
 
 **Problem.** We study the non-convex stochastic optimization problem:
