@@ -690,7 +690,6 @@ The noise is so heavy-tailed that no algorithm can guarantee convergence — the
 
 This matches our empirical observation that convergence is slower with heavier tails but still meaningful. ✓
 
----
 
 ## Discussion: Why AlphaRobust Beats NormalizedSGD
 
@@ -706,7 +705,7 @@ NormalizedSGD uses the update x_{t+1} = x_t − η_t · g_t/‖g_t‖, discardin
 
 When ‖∇f(x_t)‖ > 1 (which is typical in GPT-2 fine-tuning), AlphaRobust's per-step progress exceeds NormalizedSGD's by a factor of ‖∇f(x_t)‖. This explains the ~0.5 loss gap observed empirically.
 
----
+
 
 ## High-Probability Extension (Sketch)
 
@@ -729,45 +728,3 @@ Or equivalently, with probability at least 1 − δ:
     (1/T) Σ_{t=1}^T ‖∇f(x_t)‖² ≤ O(T^{−(p−1)/(3p−2)}) + O(τ_max · √(log(1/δ)/T))
 
 The τ_max clamping in the code is what makes this possible — without it, the increments are unbounded and Freedman's inequality cannot be applied.
-
----
-
-## Summary of Key Lemmas and Their Status
-
-| Lemma | Statement | Status |
-|-------|-----------|--------|
-| 1.1 | σ̂_t concentrates at rate O(1/√W) | Standard (DKW/Hoeffding) |
-| 1.2 | Hill estimator concentrates: \|α̂ − α\| = O(α/√k) | Classical EVT (Mason 1982) |
-| 1.3 | Local stationarity: SGD non-i.i.d. doesn't break Hill | Novel — tail dominance argument |
-| 2 | Threshold perturbation (fixed): τ_t/τ* = 1 + O(1/√W) | Direct from 1.1 |
-| 3.1 | Burn-in cost is O(1) | Trivial |
-| 3.2 | Bias-variance bounds for clipping | Standard (Zhang et al. 2020) |
-| 3.3 | Perturbed bounds under estimated τ_t | Novel — filtration argument |
-| 5.1 | Threshold drift decomposition (growing) | Novel — exponent perturbation |
-| 5.2 | Drift factor bounded: D_max = T^{O(1/√W)} | Novel — core technical lemma |
-| 5.3 | Bias-variance under growing schedule with drift | Novel — builds on 3.2 + 5.2 |
-| **Thm 1** | **Fixed schedule: O(T^{−(p−1)/(3p−2)}) + O(1/W)** | **Main result (practical)** |
-| **Thm 2** | **Growing schedule: O(T^{−(p−1)/(3p−2) + c/√W})** | **Main result (theoretical)** |
-| Cor 2.1 | Sufficient W for near-oracle rate | Direct from Thm 2 |
-
-**Novel contributions of the proof:**
-1. Lemma 1.3 (local stationarity via tail dominance)
-2. Lemma 3.3 (handling τ_t as a random variable correlated with gradients)
-3. **Lemma 5.1–5.3 + Theorem 2 (growing schedule): The Hill estimator enters the convergence
-   rate through the threshold exponent. The estimation error costs O(c/√W) in the rate exponent,
-   vanishing as W → ∞. This is the first proof that online tail index estimation achieves
-   asymptotically oracle-optimal convergence.**
-4. The dual-schedule framework: fixed (practical) + growing (theoretical) covering both
-   the empirical and theoretical narratives
-
----
-
-## Open Questions for Reviewers
-
-1. **Tightness of the O(1/W) overhead.** Is O(1/W) tight, or can the estimation error be shown to accumulate even more slowly (e.g., O(1/W²))?
-
-2. **Removing Assumption (A4).** Can the local stationarity assumption be replaced with a weaker mixing condition on the SGD trajectory?
-
-3. **Strongly convex case.** The proof extends naturally to the strongly convex case with rate O(T^{−(p−1)/(p)} + 1/W), but we defer this to the appendix.
-
-4. **Role of ε in p̂_t.** The safety margin ε = 0.05 ensures p̂ < α. Is there an optimal ε that minimizes the convergence bound?
